@@ -1,7 +1,7 @@
 ---
 created: 2026-11-08
 type: ticket
-status: proposed
+status: implemented
 summary: Phase 1 plan for a Go CLI/TUI that suspends and restores all configured Flux Kustomizations and HelmReleases with JSON journaling and crash recovery.
 ---
 
@@ -252,4 +252,18 @@ Single screen over the engine: global status banner, resource table (kind, names
 
 ## Outcome
 
-Not implemented yet. Status is `proposed`; flip to `in-progress` when milestone 0 starts.
+Implemented Phase 1 Level 2 Flux freeze.
+
+Shipped:
+- Go module `github.com/rykhalskyi/killswitch`
+- `internal/config`: YAML loading and validation for target resources
+- `internal/journal`: Append-only write-ahead log (`journal.jsonl`) with pre-patch `fsync` and torn trailing line discard
+- `internal/state`: Atomic `state.json` snapshots and non-blocking `flock` lock file
+- `internal/flux`: Dynamic client (`k8s.io/client-go/dynamic`) with automated GVR discovery, `spec.suspend` patching, and live read-back verification
+- `internal/engine`: Dependency-ordered execution (reverse suspend, forward restore), verification, partial failure handling, conflict detection, history aggregation
+- `internal/cli`: Full CLI subcommands (`status`, `suspend`, `restore`, `history`, `tui`) with dry-run, json output, confirmation prompts, and standard exit codes (0, 1, 2, 3, 4)
+- `internal/tui`: Bubble Tea terminal interface with status banners and modal confirmations
+- Target configuration in `config.example.yaml` (4 Kustomizations + 11 HelmReleases)
+- Least-privilege RBAC definitions in `rbac.example.yaml`
+- User guide in `README.md`
+- Comprehensive unit tests across all packages (`config`, `journal`, `state`, `flux`, `engine`)
