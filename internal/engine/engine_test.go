@@ -292,4 +292,60 @@ func TestEngineConflictDetection(t *testing.T) {
 	if report.OK != 4 {
 		t.Errorf("expected 4 OK, got %d", report.OK)
 	}
+
+	// Verify history contains the conflict item
+	history, err := eng.History(10)
+	if err != nil {
+		t.Fatalf("History failed: %v", err)
+	}
+	hasConflict := false
+	for _, h := range history {
+		if h.Status == "conflict" {
+			hasConflict = true
+			if h.Action != string(ActionRestore) {
+				t.Errorf("expected conflict action %s, got %s", ActionRestore, h.Action)
+			}
+			break
+		}
+	}
+	if !hasConflict {
+		t.Error("expected history to record conflict event")
+	}
+}
+
+func TestEngineRestoreAfterPartialSuspendDoesNotFalseConflict(t *testing.T) {
+	cfg := createTestConfig()
+	client := newMockFluxClient()
+
+	client.resources["Kustomization/flux-system/flux-system"] = &flux.ResourceInfo{Kind: "Kustomization", Namespace: "flux-system", Name: "flux-system", Suspended: false}
+	client.resources["Kustomization/flux-system/apps"] = &flux.ResourceInfo{Kind: "Kustomization", Namespace: "flux-system", Name: "apps", Suspended: false}
+	client.resources["HelmRelease/monitoring/kube-prometheus-stack"] = &flux.ResourceInfo{Kind: "HelmRelease", Namespace: "monitoring", Name: "kube-prometheus-stack", Suspended: false}
+	client.resources["HelmRelease/traefik/traefik"] = &flux.ResourceInfo{Kind: "HelmRelease", Namespace: "traefik", Name: "traefik", Suspended: false}
+
+	// Fail one resource on suspend so operation status is partial
+	client.failPatch["HelmRelease/traefik/traefik"] = fmt.Errorf("network glitch")
+
+	stateDir := t.TempDir()
+	eng := New(cfg, client, stateDir, "talos", nil)
+	ctx := context.Background()
+	_ = eng.Init(ctx)
+	defer eng.Close()
+
+	// Partial suspend
+	_, err := eng.Execute(ctx, ActionSuspend, false, nil)
+	if err != ErrPartialFailure {
+		t.Fatalf("expected ErrPartialFailure, got %v", err)
+	}
+
+	// traefik was never suspended (still false)
+	// Now attempt restore WITHOUT --force: it must NOT report conflict for traefik
+	// Because the previous suspend did not succeed!
+	plan, err := eng.BuildPlan(ctx, ActionRestore)
+	if err != nil {
+		t.Fatalf("BuildPlan failed: %v", err)
+	}
+	if len(plan.Conflicts) > 0 {
+		t.Fatalf("expected 0 conflicts on restore after partial suspend, got %d (%s)",
+			len(plan.Conflicts), plan.Conflicts[0].ConflictReason)
+	}
 }

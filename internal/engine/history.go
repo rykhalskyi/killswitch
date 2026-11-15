@@ -32,8 +32,9 @@ func (e *Engine) History(limit int) ([]HistoryItem, error) {
 	}
 
 	type opCollector struct {
-		start *journal.Event
-		end   *journal.Event
+		start     *journal.Event
+		end       *journal.Event
+		conflicts []journal.Event
 	}
 
 	opsOrder := []string{}
@@ -55,6 +56,8 @@ func (e *Engine) History(limit int) ([]HistoryItem, error) {
 			col.start = &ev
 		} else if ev.Event == journal.EventOpEnd {
 			col.end = &ev
+		} else if ev.Event == journal.EventConflict {
+			col.conflicts = append(col.conflicts, ev)
 		}
 	}
 
@@ -63,34 +66,48 @@ func (e *Engine) History(limit int) ([]HistoryItem, error) {
 	for i := len(opsOrder) - 1; i >= 0; i-- {
 		opID := opsOrder[i]
 		col := opsMap[opID]
-		if col.start == nil {
-			continue
-		}
 
-		item := HistoryItem{
-			Op:        opID,
-			Action:    col.start.Action,
-			Context:   col.start.Context,
-			StartedAt: col.start.TS,
-			Targets:   col.start.Targets,
-		}
-
-		if col.end != nil {
-			item.EndedAt = col.end.TS
-			item.Status = col.end.Status
-			item.OK = col.end.OK
-			item.Failed = col.end.Failed
-
-			startTime, err1 := time.Parse(time.RFC3339Nano, col.start.TS)
-			endTime, err2 := time.Parse(time.RFC3339Nano, col.end.TS)
-			if err1 == nil && err2 == nil {
-				item.DurationMs = endTime.Sub(startTime).Milliseconds()
+		if col.start != nil {
+			item := HistoryItem{
+				Op:        opID,
+				Action:    col.start.Action,
+				Context:   col.start.Context,
+				StartedAt: col.start.TS,
+				Targets:   col.start.Targets,
 			}
-		} else {
-			item.Status = "interrupted"
+
+			if col.end != nil {
+				item.EndedAt = col.end.TS
+				item.Status = col.end.Status
+				item.OK = col.end.OK
+				item.Failed = col.end.Failed
+
+				startTime, err1 := time.Parse(time.RFC3339Nano, col.start.TS)
+				endTime, err2 := time.Parse(time.RFC3339Nano, col.end.TS)
+				if err1 == nil && err2 == nil {
+					item.DurationMs = endTime.Sub(startTime).Milliseconds()
+				}
+			} else {
+				item.Status = "interrupted"
+			}
+
+			items = append(items, item)
+		} else if len(col.conflicts) > 0 {
+			firstConf := col.conflicts[0]
+			item := HistoryItem{
+				Op:        opID,
+				Action:    firstConf.Action,
+				Context:   firstConf.Context,
+				StartedAt: firstConf.TS,
+				EndedAt:   firstConf.TS,
+				Status:    "conflict",
+				Targets:   len(col.conflicts),
+				OK:        0,
+				Failed:    len(col.conflicts),
+			}
+			items = append(items, item)
 		}
 
-		items = append(items, item)
 		if limit > 0 && len(items) >= limit {
 			break
 		}

@@ -220,7 +220,8 @@ func (e *Engine) BuildPlan(ctx context.Context, action Action) (*Plan, error) {
 			// Conflict detection on restore:
 			// If killswitch suspended the cluster (last op suspend), expected was true.
 			// If observed is false, it was un-suspended outside killswitch!
-			if e.state.LastCompletedOp != nil && e.state.LastCompletedOp.Action == string(ActionSuspend) && !info.Suspended {
+			if e.state.LastCompletedOp != nil && e.state.LastCompletedOp.Action == string(ActionSuspend) &&
+				e.state.LastCompletedOp.Status == journal.StatusSuccess && !info.Suspended {
 				item.Conflict = true
 				item.ConflictReason = "resource was un-suspended outside killswitch"
 				plan.Conflicts = append(plan.Conflicts, item)
@@ -350,13 +351,16 @@ func (e *Engine) Execute(ctx context.Context, action Action, force bool, onProgr
 
 	// Check conflicts
 	if len(plan.Conflicts) > 0 && !force {
-		// Append conflict event to journal
+		opID := fmt.Sprintf("01%X", time.Now().UnixNano())
+		// Append conflict events to journal under the same opID
 		for _, conf := range plan.Conflicts {
 			exp := true
 			obs := conf.CurrentSuspended
 			_ = e.journal.Append(&journal.Event{
-				Op:        fmt.Sprintf("01%X", time.Now().UnixNano()),
+				Op:        opID,
 				Event:     journal.EventConflict,
+				Action:    string(action),
+				Context:   e.kubeCtx,
 				Kind:      conf.Resource.Kind,
 				Namespace: conf.Resource.Namespace,
 				Name:      conf.Resource.Name,

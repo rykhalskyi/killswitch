@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/rykhalskyi/killswitch/internal/config"
 	"github.com/rykhalskyi/killswitch/internal/engine"
 )
 
@@ -69,6 +70,14 @@ type execDoneMsg struct {
 	err    error
 }
 
+type progressMsg struct {
+	step   int
+	total  int
+	res    config.Resource
+	status string
+	err    error
+}
+
 type Model struct {
 	eng           *engine.Engine
 	status        *engine.StatusReport
@@ -80,6 +89,7 @@ type Model struct {
 	execProgress  string
 	errorMessage  string
 	infoMessage   string
+	msgChan       chan tea.Msg
 	width         int
 	height        int
 }
@@ -110,12 +120,35 @@ func (m Model) fetchPlanCmd(action engine.Action) tea.Cmd {
 	}
 }
 
-func (m Model) executeCmd(action engine.Action) tea.Cmd {
+func waitForProgress(ch <-chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-		report, err := m.eng.Execute(ctx, action, false, nil)
-		return execDoneMsg{report: report, err: err}
+		if ch == nil {
+			return nil
+		}
+		msg, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return msg
 	}
+}
+
+func (m *Model) startExecution(action engine.Action) tea.Cmd {
+	ch := make(chan tea.Msg, 64)
+	m.executing = true
+	m.msgChan = ch
+	m.execProgress = fmt.Sprintf("Starting %s...", action)
+
+	go func() {
+		defer close(ch)
+		ctx := context.Background()
+		report, err := m.eng.Execute(ctx, action, false, func(step int, total int, res config.Resource, status string, execErr error) {
+			ch <- progressMsg{step: step, total: total, res: res, status: status, err: execErr}
+		})
+		ch <- execDoneMsg{report: report, err: err}
+	}()
+
+	return waitForProgress(ch)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -145,8 +178,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case progressMsg:
+		if msg.err != nil {
+			m.execProgress = fmt.Sprintf("[%d/%d] %s (FAILED: %v)", msg.step, msg.total, msg.res.Name, msg.err)
+		} else {
+			m.execProgress = fmt.Sprintf("[%d/%d] %s (OK)", msg.step, msg.total, msg.res.Name)
+		}
+		return m, waitForProgress(m.msgChan)
+
 	case execDoneMsg:
 		m.executing = false
+		m.msgChan = nil
 		m.isModalOpen = false
 		if msg.err != nil {
 			m.errorMessage = fmt.Sprintf("Execution error: %v", msg.err)
@@ -165,9 +207,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "y", "Y":
 				if !m.isDryRunModal {
-					m.executing = true
-					m.execProgress = fmt.Sprintf("Executing %s...", m.pendingAction)
-					return m, m.executeCmd(m.pendingAction)
+					cmd := m.startExecution(m.pendingAction)
+					return m, cmd
 				}
 				m.isModalOpen = false
 				return m, nil

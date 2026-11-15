@@ -25,8 +25,7 @@ func Main(args []string) int {
 		return engine.ExitConfigOrConnection
 	}
 
-	cmd := args[1]
-	cmdArgs := args[2:]
+	cmd, cmdArgs := parseCommand(args)
 
 	switch cmd {
 	case "status":
@@ -47,6 +46,52 @@ func Main(args []string) int {
 		printUsage()
 		return engine.ExitConfigOrConnection
 	}
+}
+
+func parseCommand(args []string) (string, []string) {
+	known := map[string]bool{
+		"status":  true,
+		"suspend": true,
+		"restore": true,
+		"history": true,
+		"tui":     true,
+		"help":    true,
+	}
+
+	cmdIdx := -1
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		if (arg == "-h" || arg == "--help" || arg == "help") && cmdIdx == -1 {
+			// Check if this is a help request without a preceding subcommand
+			hasSubcommand := false
+			for j := 1; j < len(args); j++ {
+				if j != i && known[args[j]] && args[j] != "help" {
+					hasSubcommand = true
+					break
+				}
+			}
+			if !hasSubcommand {
+				return "help", nil
+			}
+		}
+		if known[arg] && arg != "help" {
+			cmdIdx = i
+			break
+		}
+	}
+
+	if cmdIdx == -1 {
+		if len(args) > 1 {
+			return args[1], args[2:]
+		}
+		return "", nil
+	}
+
+	cmd := args[cmdIdx]
+	var cmdArgs []string
+	cmdArgs = append(cmdArgs, args[1:cmdIdx]...)
+	cmdArgs = append(cmdArgs, args[cmdIdx+1:]...)
+	return cmd, cmdArgs
 }
 
 func printUsage() {
