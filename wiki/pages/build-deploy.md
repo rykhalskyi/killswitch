@@ -1,18 +1,18 @@
 ---
 created: 2026-11-08
 type: build-deploy
-summary: Build/test/lint/release commands for Kill Switch (Go); tooling will be added with Phase 1.
+summary: Build, test, lint, and run commands for the Kill Switch Go CLI and TUI.
 ---
 
 # Build & Deploy
 
-The repository is currently a Go project scaffold (`.gitignore` for Go, no `go.mod` yet). Commands below are the expected conventions; update this page when the toolchain lands.
+Kill Switch is implemented in Go as a single-binary CLI and TUI.
 
 ## Build
 
 ```sh
 go build ./...
-go build -o kill-switch ./cmd/kill-switch
+go build -o killswitch ./cmd/killswitch
 ```
 
 ## Test
@@ -32,10 +32,15 @@ go vet ./...
 ## Run
 
 ```sh
-./kill-switch            # reads config/config.yaml and the current kubeconfig
+./killswitch status                         # queries live Flux resources from cluster
+./killswitch suspend --dry-run              # previews suspend plan without modifying cluster
+./killswitch suspend                        # freezes all configured Flux resources
+./killswitch restore                        # restores all resources to recorded original states
+./killswitch history                        # displays operation history from journal.jsonl
+./killswitch tui                            # launches the Bubble Tea interactive TUI
 ```
 
-Requires a valid kubeconfig with access to the configured Flux resources.
+Requires a valid kubeconfig with access to the configured Flux resources. Config is loaded from `config.yaml` or `config.example.yaml`.
 
 ## Wiki tooling
 

@@ -4,7 +4,8 @@
 
 ## Overview
 - [project-overview](pages/project-overview.md) — Kill Switch is a YAML-driven Go TUI for reversible homelab operations, starting with a Flux reconciliation toggle.
-- [build-deploy](pages/build-deploy.md) — Build/test/lint/release commands for Kill Switch (Go); tooling will be added with Phase 1.
+- [build-deploy](pages/build-deploy.md) — Build, test, lint, and run commands for the Kill Switch Go CLI and TUI.
+- [manual](pages/manual.md) — Comprehensive user manual and CLI/TUI operational guide for Kill Switch.
 
 ## Tickets
 - [tickets/t1-phase1-flux-toggle](pages/tickets/t1-phase1-flux-toggle.md) — Phase 1 plan for a Go CLI/TUI that suspends and restores all configured Flux Kustomizations and HelmReleases with JSON journaling and crash recovery.
