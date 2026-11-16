@@ -11,48 +11,117 @@ import (
 	"github.com/rykhalskyi/killswitch/internal/engine"
 )
 
+// Colors follow a k9s / flux9s inspired palette.
 var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#FAFAFA")).
-			Background(lipgloss.Color("#5A56E0")).
-			Padding(0, 1)
+	accent      = lipgloss.Color("#A78BFA")
+	accentDark  = lipgloss.Color("#5A56E0")
+	muted       = lipgloss.Color("#9CA3AF")
+	borderColor = lipgloss.Color("#4B5563")
+	green       = lipgloss.Color("#10B981")
+	red         = lipgloss.Color("#EF4444")
+	yellow      = lipgloss.Color("#F59E0B")
+	cyan        = lipgloss.Color("#22D3EE")
 
-	bannerGreen = lipgloss.NewStyle().
+	bannerStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(lipgloss.Color("#047857")).
-			Padding(0, 1)
+			Foreground(accent)
 
-	bannerRed = lipgloss.NewStyle().
+	killWordStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(lipgloss.Color("#B91C1C")).
-			Padding(0, 1)
+			Foreground(red)
 
-	bannerYellow = lipgloss.NewStyle().
+	switchWordStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#000000")).
-			Background(lipgloss.Color("#F59E0B")).
-			Padding(0, 1)
+			Foreground(lipgloss.Color("#F9FAFB"))
 
-	headerStyle = lipgloss.NewStyle().
+	logoRedStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#7C3AED")).
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderBottom(true)
+			Foreground(red)
 
-	tableRowStyle = lipgloss.NewStyle().
-			Padding(0, 1)
+	logoWhiteStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#E5E7EB"))
+
+	subtitleStyle = lipgloss.NewStyle().
+			Foreground(muted)
+
+	panelTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(cyan)
+
+	colHeaderStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(accent)
+
+	borderStyle = lipgloss.NewStyle().
+			Foreground(borderColor)
+
+	selectedRowStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#FFFFFF")).
+				Background(accentDark)
+
+	nameStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#F9FAFB"))
+
+	dimStyle = lipgloss.NewStyle().
+			Foreground(muted)
+
+	onStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(green)
+
+	offStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(red)
+
+	mixedStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(yellow)
+
+	errorStyle = lipgloss.NewStyle().
+			Foreground(red)
+
+	infoStyle = lipgloss.NewStyle().
+			Foreground(green)
+
+	footerStyle = lipgloss.NewStyle().
+			Foreground(muted)
 
 	modalBox = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#8B5CF6")).
+			BorderForeground(accent).
 			Padding(1, 2)
 
-	footerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#9CA3AF"))
+	modalTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(accent)
+
+	modalWarnStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(yellow)
 )
+
+type viewMode int
+
+const (
+	viewList viewMode = iota
+	viewDetail
+)
+
+// switchDef describes one top-level switch in the main table.
+// Phase 1 only ships the Flux reconciliation switch; more can be appended later.
+type switchDef struct {
+	name        string
+	description string
+}
+
+var switchDefs = []switchDef{
+	{
+		name:        "Flux Reconciliation",
+		description: "Suspend / restore all configured Flux Kustomizations and HelmReleases",
+	},
+}
 
 type statusMsg struct {
 	report *engine.StatusReport
@@ -79,19 +148,28 @@ type progressMsg struct {
 }
 
 type Model struct {
-	eng           *engine.Engine
-	status        *engine.StatusReport
+	eng    *engine.Engine
+	status *engine.StatusReport
+
+	// layout
+	width  int
+	height int
+
+	// navigation
+	view         viewMode
+	cursor       int
+	detailCursor int
+
+	// confirmation / execution
 	pendingPlan   *engine.Plan
 	pendingAction engine.Action
-	isModalOpen   bool
-	isDryRunModal bool
+	confirmOpen   bool
 	executing     bool
 	execProgress  string
-	errorMessage  string
-	infoMessage   string
 	msgChan       chan tea.Msg
-	width         int
-	height        int
+
+	errorMessage string
+	infoMessage  string
 }
 
 func NewModel(eng *engine.Engine) Model {
@@ -164,18 +242,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = msg.report
 			m.errorMessage = ""
+			if m.status != nil && m.detailCursor >= len(m.status.Resources) {
+				m.detailCursor = len(m.status.Resources) - 1
+				if m.detailCursor < 0 {
+					m.detailCursor = 0
+				}
+			}
 		}
 		return m, nil
 
 	case planMsg:
 		if msg.err != nil {
 			m.errorMessage = fmt.Sprintf("Error building plan: %v", msg.err)
-			m.isModalOpen = false
-		} else {
-			m.pendingPlan = msg.plan
-			m.pendingAction = msg.action
-			m.isModalOpen = true
+			m.confirmOpen = false
+			return m, nil
 		}
+		m.pendingPlan = msg.plan
+		m.pendingAction = msg.action
+		m.confirmOpen = true
 		return m, nil
 
 	case progressMsg:
@@ -189,57 +273,91 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case execDoneMsg:
 		m.executing = false
 		m.msgChan = nil
-		m.isModalOpen = false
+		m.confirmOpen = false
+		m.pendingPlan = nil
 		if msg.err != nil {
 			m.errorMessage = fmt.Sprintf("Execution error: %v", msg.err)
+			m.infoMessage = ""
 		} else {
 			m.infoMessage = fmt.Sprintf("Operation %s completed (%d ok, %d failed)", msg.report.Op, msg.report.OK, msg.report.Failed)
+			m.errorMessage = ""
 		}
 		return m, m.fetchStatusCmd()
 
 	case tea.KeyMsg:
 		if m.executing {
+			if msg.String() == "ctrl+c" {
+				return m, tea.Quit
+			}
 			return m, nil
 		}
 
-		// Handle Modal keys
-		if m.isModalOpen {
+		if m.confirmOpen {
 			switch msg.String() {
-			case "y", "Y":
-				if !m.isDryRunModal {
-					cmd := m.startExecution(m.pendingAction)
-					return m, cmd
-				}
-				m.isModalOpen = false
-				return m, nil
+			case "y", "Y", "enter":
+				m.confirmOpen = false
+				return m, m.startExecution(m.pendingAction)
 			case "n", "N", "esc", "q":
-				m.isModalOpen = false
-				m.isDryRunModal = false
-				return m, nil
-			default:
+				m.confirmOpen = false
+				m.pendingPlan = nil
 				return m, nil
 			}
+			return m, nil
 		}
 
-		// Main screen keys
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 
-		case "s":
-			m.isDryRunModal = false
-			return m, m.fetchPlanCmd(engine.ActionSuspend)
+		case "ctrl+t", "t", " ":
+			action, ok := m.nextAction()
+			if !ok {
+				m.errorMessage = "Status not loaded yet"
+				return m, nil
+			}
+			m.errorMessage = ""
+			m.infoMessage = ""
+			return m, m.fetchPlanCmd(action)
 
-		case "r":
-			m.isDryRunModal = false
-			return m, m.fetchPlanCmd(engine.ActionRestore)
-
-		case "d":
-			m.isDryRunModal = true
-			return m, m.fetchPlanCmd(engine.ActionSuspend)
-
-		case "u":
+		case "r", "u":
 			return m, m.fetchStatusCmd()
+
+		case "up", "k":
+			if m.view == viewDetail {
+				if m.detailCursor > 0 {
+					m.detailCursor--
+				}
+			} else if m.cursor > 0 {
+				m.cursor--
+			}
+			return m, nil
+
+		case "down", "j":
+			if m.view == viewDetail {
+				max := 0
+				if m.status != nil {
+					max = len(m.status.Resources) - 1
+				}
+				if m.detailCursor < max {
+					m.detailCursor++
+				}
+			} else if m.cursor < len(switchDefs)-1 {
+				m.cursor++
+			}
+			return m, nil
+
+		case "enter":
+			if m.view == viewList {
+				m.view = viewDetail
+				m.detailCursor = 0
+			}
+			return m, nil
+
+		case "esc":
+			if m.view == viewDetail {
+				m.view = viewList
+			}
+			return m, nil
 		}
 	}
 
@@ -247,125 +365,648 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	var b strings.Builder
-
-	// Title
-	b.WriteString(titleStyle.Render(" KILL SWITCH — FLUX CONTROLLER ") + "\n\n")
-
-	// Global Banner
-	if m.status != nil {
-		switch m.status.GlobalStatus {
-		case engine.GlobalStatusSuspended:
-			b.WriteString(bannerGreen.Render(" GLOBAL STATE: SUSPENDED (All Flux resources frozen) ") + "\n")
-		case engine.GlobalStatusRestored:
-			b.WriteString(bannerGreen.Render(" GLOBAL STATE: RESTORED (Reconciliation active) ") + "\n")
-		case engine.GlobalStatusPartial:
-			b.WriteString(bannerRed.Render(" GLOBAL STATE: PARTIAL / MIXED (Intervention required) ") + "\n")
-		default:
-			b.WriteString(bannerYellow.Render(" GLOBAL STATE: UNKNOWN ") + "\n")
-		}
-		if m.status.Incomplete {
-			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Render(" ⚠ "+m.status.IncompleteMsg) + "\n")
-		}
-	} else {
-		b.WriteString(bannerYellow.Render(" CONNECTING TO CLUSTER... ") + "\n")
+	if m.width <= 0 || m.height <= 0 {
+		return "Loading..."
+	}
+	if m.width < 12 || m.height < 6 {
+		msg := truncateText("too small — resize", m.width)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, msg)
 	}
 
-	b.WriteString("\n")
+	headerHeight := m.headerHeight()
+	bodyHeight := m.height - headerHeight
 
-	if m.errorMessage != "" {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#DC2626")).Bold(true).Render("Error: "+m.errorMessage) + "\n\n")
+	header := m.renderHeader(headerHeight)
+	if bodyHeight <= 0 {
+		return header
 	}
-	if m.infoMessage != "" {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")).Render(m.infoMessage) + "\n\n")
-	}
-
-	// Resource Table
-	if m.status != nil {
-		b.WriteString(headerStyle.Render(fmt.Sprintf("%-16s %-20s %-26s %-12s %-12s %-16s",
-			"KIND", "NAMESPACE", "NAME", "STATUS", "ORIGINAL", "READY")) + "\n")
-
-		for _, res := range m.status.Resources {
-			stStr := "ACTIVE"
-			if !res.Exists {
-				stStr = "MISSING"
-			} else if res.CurrentSuspended {
-				stStr = "SUSPENDED"
-			}
-
-			origStr := "-"
-			if res.OriginalSuspended != nil {
-				if *res.OriginalSuspended {
-					origStr = "SUSPENDED"
-				} else {
-					origStr = "ACTIVE"
-				}
-			}
-
-			readyStr := res.Ready
-			if res.LaggingObservation {
-				readyStr += " (!)"
-			}
-
-			row := fmt.Sprintf("%-16s %-20s %-26s %-12s %-12s %-16s",
-				truncate(res.Kind, 15),
-				truncate(res.Namespace, 19),
-				truncate(res.Name, 25),
-				stStr,
-				origStr,
-				truncate(readyStr, 15),
-			)
-			b.WriteString(tableRowStyle.Render(row) + "\n")
-		}
+	if bodyHeight < 3 {
+		msg := truncateText("too small — resize", m.width)
+		return header + "\n" + lipgloss.Place(m.width, bodyHeight, lipgloss.Center, lipgloss.Center, msg)
 	}
 
-	b.WriteString("\n")
-
-	// Modal Overlay if open
-	if m.isModalOpen && m.pendingPlan != nil {
-		var modal strings.Builder
-		if m.isDryRunModal {
-			modal.WriteString(lipgloss.NewStyle().Bold(true).Render("DRY RUN PLAN:") + "\n\n")
-		} else {
-			modal.WriteString(lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("CONFIRM %s PLAN:", strings.ToUpper(string(m.pendingAction)))) + "\n\n")
-		}
-
-		for i, item := range m.pendingPlan.Items {
-			target := "ACTIVE"
-			if item.TargetSuspended {
-				target = "SUSPENDED"
-			}
-			modal.WriteString(fmt.Sprintf("%2d. %s/%s -> %s\n", i+1, item.Resource.Kind, item.Resource.Name, target))
-		}
-
-		if len(m.pendingPlan.Conflicts) > 0 {
-			modal.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Render("\n⚠ Conflicts detected (external modifications)!\n"))
-		}
-
-		if m.isDryRunModal {
-			modal.WriteString("\nPress [Esc] or [q] to close.")
-		} else {
-			modal.WriteString(fmt.Sprintf("\nProceed with %s? [y] Yes  /  [n] Cancel", m.pendingAction))
-		}
-
-		b.WriteString(modalBox.Render(modal.String()) + "\n\n")
+	var body string
+	switch {
+	case m.confirmOpen && m.pendingPlan != nil:
+		body = m.renderConfirm(bodyHeight)
+	case m.executing:
+		body = m.renderProgress(bodyHeight)
+	case m.view == viewDetail:
+		body = m.renderDetail(bodyHeight)
+	default:
+		body = m.renderList(bodyHeight)
 	}
 
-	if m.executing {
-		b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F59E0B")).Render("⏳ "+m.execProgress) + "\n\n")
-	}
-
-	// Footer Actions
-	b.WriteString(footerStyle.Render("[s] Suspend   [r] Restore   [d] Dry-run   [u] Refresh   [q] Quit") + "\n")
-
-	return b.String()
+	return header + "\n" + body
 }
 
-func truncate(s string, max int) string {
-	if len(s) > max {
-		return s[:max-1] + "…"
+func (m Model) headerHeight() int {
+	if m.height <= 0 {
+		return 4
+	}
+	h := m.height / 5
+	if h < 4 {
+		h = 4
+	}
+	if h > m.height-4 {
+		h = m.height / 5
+	}
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+func (m Model) renderHeader(height int) string {
+	word := styledWordmark()
+	wordWidth := lipgloss.Width(word[0])
+
+	logo := styledLogo()
+	logoWidth := lipgloss.Width(logo[0])
+	combinedWidth := logoWidth + 3 + wordWidth
+
+	// The block wordmark needs four rows. Below that, use a compact one-liner.
+	if height < 4 || m.width < wordWidth {
+		title := truncateText("KILL SWITCH — FLUX RECONCILIATION CONTROLLER", m.width)
+		return lipgloss.Place(m.width, height, lipgloss.Center, lipgloss.Center, bannerStyle.Render(title))
+	}
+
+	lines := make([]string, 0, 5)
+	if m.width >= combinedWidth {
+		for i := 0; i < 4; i++ {
+			lines = append(lines, logo[i]+"   "+word[i])
+		}
+	} else {
+		lines = append(lines, word...)
+	}
+	if height >= 5 {
+		lines = append(lines, subtitleStyle.Render("FLUX RECONCILIATION CONTROLLER"))
+	}
+
+	return lipgloss.Place(m.width, height, lipgloss.Center, lipgloss.Center, strings.Join(lines, "\n"))
+}
+
+// styledWordmark renders "KILL SWITCH" as block letters, red for KILL and
+// white for SWITCH, mirroring the project logo.
+func styledWordmark() []string {
+	kill := renderBanner("KILL")
+	sw := renderBanner("SWITCH")
+	lines := make([]string, 4)
+	for i := 0; i < 4; i++ {
+		lines[i] = killWordStyle.Render(kill[i]) + "  " + switchWordStyle.Render(sw[i])
+	}
+	return lines
+}
+
+// styledLogo renders a compact pseudographic version of the kill-switch logo:
+// a vertical toggle with red rays and a red "on" knob.
+func styledLogo() []string {
+	return []string{
+		logoRedStyle.Render(`  \│/    `),
+		logoWhiteStyle.Render(`╭─────╮  `),
+		logoWhiteStyle.Render(`│`) + logoRedStyle.Render(`█████`) + logoWhiteStyle.Render(`│  `),
+		logoWhiteStyle.Render(`╰─────╯  `),
+	}
+}
+
+// renderBanner draws a 4-row block "pseudographic" banner.
+func renderBanner(text string) []string {
+	lines := make([]string, 4)
+	for i, r := range text {
+		glyph, ok := banner4[r]
+		if !ok {
+			glyph = banner4[' ']
+		}
+		for row := 0; row < 4; row++ {
+			if i > 0 {
+				lines[row] += " "
+			}
+			lines[row] += glyph[row]
+		}
+	}
+	return lines
+}
+
+var banner4 = map[rune][]string{
+	'K': {"█  █", "██  ", "█ █ ", "█  █"},
+	'I': {"███", " █ ", " █ ", "███"},
+	'L': {"█  ", "█  ", "█  ", "███"},
+	'S': {"████", "███ ", "   █", "████"},
+	'W': {"█   █", "█ █ █", "██ ██", "█   █"},
+	'T': {"███", " █ ", " █ ", " █ "},
+	'C': {"████", "█   ", "█   ", "████"},
+	'H': {"█  █", "████", "█  █", "█  █"},
+	' ': {"  ", "  ", "  ", "  "},
+}
+
+func (m Model) renderList(bodyHeight int) string {
+	usable := m.contentWidth()
+	widths := allocWidths(usable-3, []int{32, 37, 15, 16})
+
+	colHeader := cell("NAME", widths[0]) + " " +
+		cell("DESCRIPTION", widths[1]) + " " +
+		cell("CLUSTER", widths[2]) + " " +
+		cellRight("SWITCH", widths[3])
+
+	sw := m.switchState()
+	clusterLabel, clusterStyle := m.clusterState()
+
+	rows := make([]string, 0, len(switchDefs))
+	for i, def := range switchDefs {
+		marker := "  "
+		if i == m.cursor {
+			marker = "▸ "
+		}
+
+		name := cell(marker+def.name, widths[0])
+		desc := cell(def.description, widths[1])
+		cluster := cell(clusterLabel, widths[2])
+		state := cellRight(sw.label, widths[3])
+
+		if i == m.cursor {
+			rows = append(rows, selectedRowStyle.Render(name+" "+desc+" "+cluster+" "+state))
+		} else {
+			rows = append(rows, nameStyle.Render(name)+" "+dimStyle.Render(desc)+" "+clusterStyle.Render(cluster)+" "+sw.style.Render(state))
+		}
+	}
+
+	innerH := bodyHeight - 2
+	maxRows := innerH - 6
+	if maxRows < 1 {
+		maxRows = 1
+	}
+	visible, _ := windowRows(rows, m.cursor, maxRows)
+
+	title := "FLUX CONTROLS"
+	right := "connecting…"
+	if m.status != nil {
+		ctx := m.status.Context
+		if ctx == "" {
+			ctx = "cluster"
+		}
+		right = ctx + " · " + clusterLabel
+	}
+
+	return m.renderPanel(title, right, colHeader, visible, bodyHeight)
+}
+
+func (m Model) renderDetail(bodyHeight int) string {
+	sw := switchDefs[m.cursor]
+	var resources []engine.ResourceStatusItem
+	if m.status != nil {
+		resources = m.status.Resources
+	}
+	if m.detailCursor >= len(resources) {
+		m.detailCursor = len(resources) - 1
+	}
+	if m.detailCursor < 0 {
+		m.detailCursor = 0
+	}
+
+	usable := m.contentWidth()
+	widths := allocWidths(usable-5, []int{15, 18, 24, 14, 13, 16})
+	colHeader := cell("KIND", widths[0]) + " " +
+		cell("NAMESPACE", widths[1]) + " " +
+		cell("NAME", widths[2]) + " " +
+		cell("STATUS", widths[3]) + " " +
+		cell("ORIGINAL", widths[4]) + " " +
+		cell("READY", widths[5])
+
+	rows := make([]string, 0, len(resources))
+	for i, res := range resources {
+		row := resourceRow(res, widths)
+		if i == m.detailCursor {
+			row = selectedRowStyle.Render(row)
+		}
+		rows = append(rows, row)
+	}
+
+	innerH := bodyHeight - 2
+	maxRows := innerH - 6
+	if maxRows < 1 {
+		maxRows = 1
+	}
+	visible, start := windowRows(rows, m.detailCursor, maxRows)
+
+	clusterLabel, _ := m.clusterState()
+	title := sw.name + " — properties"
+	right := fmt.Sprintf("%d items", len(resources))
+	if m.status != nil {
+		right = clusterLabel + " · " + right
+	}
+	if len(resources) > len(visible) {
+		title = fmt.Sprintf("%s  (%d-%d of %d)", sw.name, start+1, start+len(visible), len(resources))
+	}
+
+	return m.renderPanel(title, right, colHeader, visible, bodyHeight)
+}
+
+func (m Model) renderProgress(bodyHeight int) string {
+	action := strings.ToUpper(string(m.pendingAction))
+	line := cell("⏳ "+m.execProgress, m.contentWidth())
+	return m.renderPanel("EXECUTING "+action, "in progress", "", []string{line}, bodyHeight)
+}
+
+func (m Model) renderConfirm(bodyHeight int) string {
+	plan := m.pendingPlan
+
+	modalWidth := m.width * 3 / 4
+	if modalWidth > 84 {
+		modalWidth = 84
+	}
+	if modalWidth < 44 {
+		modalWidth = m.width - 2
+	}
+	if modalWidth > m.width {
+		modalWidth = m.width
+	}
+	contentW := modalWidth - 6
+	if contentW > m.width-6 {
+		contentW = m.width - 6
+	}
+	if contentW < 4 {
+		contentW = 4
+	}
+	maxLines := bodyHeight - 4
+	if maxLines < 1 {
+		msg := truncateText("Confirm switch change? [y] yes / [n] no", m.width)
+		return lipgloss.Place(m.width, bodyHeight, lipgloss.Center, lipgloss.Center, msg)
+	}
+
+	sw := switchDefs[m.cursor]
+	current, target := "ON", "OFF"
+	if m.pendingAction == engine.ActionRestore {
+		current, target = "OFF", "ON"
+	}
+
+	lines := []string{
+		modalTitleStyle.Render("CONFIRM SWITCH CHANGE"),
+		"",
+		cell(sw.name+": "+current+" → "+target, contentW),
+		cell(fmt.Sprintf("Action: %s · %d resources", m.pendingAction, len(plan.Items)), contentW),
+		"",
+	}
+
+	// Reserve a line for a possible overflow/warning notice, plus a blank line and the footer.
+	available := maxLines - len(lines) - 3
+	if available < 1 {
+		available = 1
+	}
+	show := len(plan.Items)
+	if show > available {
+		show = available
+	}
+	for i := 0; i < show; i++ {
+		item := plan.Items[i]
+		targetState := "ACTIVE"
+		if item.TargetSuspended {
+			targetState = "SUSPENDED"
+		}
+		lines = append(lines, cell(fmt.Sprintf("%2d. %s/%s → %s", i+1, item.Resource.Kind, item.Resource.Name, targetState), contentW))
+	}
+
+	if len(plan.Items) > show {
+		lines = append(lines, cell(fmt.Sprintf("… and %d more", len(plan.Items)-show), contentW))
+	} else if len(plan.Conflicts) > 0 {
+		lines = append(lines, modalWarnStyle.Render(cell("⚠ conflicts detected — execution may fail", contentW)))
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, cell("[y/enter] Confirm    [n/esc] Cancel", contentW))
+
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+		lines[maxLines-1] = cell("[y/enter] Confirm    [n/esc] Cancel", contentW)
+	}
+
+	return lipgloss.Place(m.width, bodyHeight, lipgloss.Center, lipgloss.Center, modalBox.Render(strings.Join(lines, "\n")))
+}
+
+func (m Model) renderPanel(title, right, colHeader string, rows []string, bodyHeight int) string {
+	if m.width < 6 {
+		return lipgloss.Place(m.width, bodyHeight, lipgloss.Center, lipgloss.Center, "terminal too small")
+	}
+
+	usable := m.contentWidth()
+	innerH := bodyHeight - 2
+	if innerH < 1 {
+		innerH = 1
+	}
+
+	chrome := 4 // title, blank, status, footer
+	if colHeader != "" {
+		chrome += 2 // column header + separator
+	}
+	maxRows := innerH - chrome
+	if maxRows < 0 {
+		maxRows = 0
+	}
+	if len(rows) > maxRows {
+		rows = rows[:maxRows]
+	}
+
+	lines := make([]string, 0, innerH)
+	lines = append(lines, " "+panelTitleStyle.Render(padBetween(title, right, usable))+" ")
+	lines = append(lines, strings.Repeat(" ", usable+2))
+	if colHeader != "" {
+		lines = append(lines, " "+colHeaderStyle.Render(cell(colHeader, usable))+" ")
+		lines = append(lines, " "+borderStyle.Render(strings.Repeat("─", usable))+" ")
+	}
+	for _, row := range rows {
+		lines = append(lines, " "+row+" ")
+	}
+
+	// Keep the status line and key help pinned to the bottom of the panel.
+	for len(lines) < innerH-2 {
+		lines = append(lines, strings.Repeat(" ", usable+2))
+	}
+
+	statusText, statusStyle := m.panelStatus()
+	lines = append(lines, " "+statusStyle.Render(cell(statusText, usable))+" ")
+	lines = append(lines, " "+footerStyle.Render(cell(m.footerText(), usable))+" ")
+
+	if len(lines) > innerH {
+		tail := 2
+		if innerH <= tail {
+			lines = lines[:innerH]
+		} else {
+			lines = append(lines[:innerH-tail], lines[len(lines)-tail:]...)
+		}
+	}
+	for len(lines) < innerH {
+		lines = append(lines, strings.Repeat(" ", usable+2))
+	}
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor)
+
+	return box.Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) contentWidth() int {
+	w := m.width - 4
+	if w < 1 {
+		w = 1
+	}
+	return w
+}
+
+func (m Model) panelStatus() (string, lipgloss.Style) {
+	if m.errorMessage != "" {
+		return "Error: " + m.errorMessage, errorStyle
+	}
+	if m.infoMessage != "" {
+		return m.infoMessage, infoStyle
+	}
+	return "", footerStyle
+}
+
+func (m Model) footerText() string {
+	if m.view == viewDetail {
+		return "[↑/↓] scroll   [esc] back   [ctrl+t] toggle   [r] refresh   [q] quit"
+	}
+	return "[↑/↓] select   [enter] inspect   [ctrl+t] toggle   [r] refresh   [q] quit"
+}
+
+type switchState struct {
+	label string
+	style lipgloss.Style
+	on    bool
+	known bool
+}
+
+// switchState is the switch position itself: ON while reconciliation is
+// active, OFF only when every reachable target is fully frozen.
+func (m Model) switchState() switchState {
+	if m.status == nil || len(m.status.Resources) == 0 {
+		return switchState{label: "… LOADING", style: dimStyle}
+	}
+
+	existing, suspended := 0, 0
+	for _, res := range m.status.Resources {
+		if !res.Exists {
+			continue
+		}
+		existing++
+		if res.CurrentSuspended {
+			suspended++
+		}
+	}
+
+	if existing == 0 {
+		return switchState{label: "? UNKNOWN", style: dimStyle}
+	}
+	if suspended == existing {
+		return switchState{label: "○ OFF", style: offStyle, known: true}
+	}
+	return switchState{label: "● ON", style: onStyle, on: true, known: true}
+}
+
+// clusterState is the observed condition of the Flux resources. It is shown
+// separately from the switch position so MIXED/DRIFT never masquerade as a
+// switch state.
+func (m Model) clusterState() (string, lipgloss.Style) {
+	if m.status == nil || len(m.status.Resources) == 0 {
+		return "… LOADING", dimStyle
+	}
+
+	existing, suspended, missing := 0, 0, 0
+	drifted := false
+	for _, res := range m.status.Resources {
+		if !res.Exists {
+			missing++
+			continue
+		}
+		existing++
+		if res.CurrentSuspended {
+			suspended++
+		}
+		if res.OriginalSuspended != nil && res.CurrentSuspended != *res.OriginalSuspended {
+			drifted = true
+		}
+	}
+
+	switch {
+	case existing == 0 || missing > 0:
+		return "MISSING", errorStyle
+	case suspended == existing:
+		return "SUSPENDED", offStyle
+	case suspended == 0 && drifted:
+		return "DRIFT", mixedStyle
+	case suspended == 0:
+		return "RESTORED", onStyle
+	default:
+		return "MIXED", mixedStyle
+	}
+}
+
+func (m Model) nextAction() (engine.Action, bool) {
+	st := m.switchState()
+	if !st.known {
+		return "", false
+	}
+	if st.on {
+		return engine.ActionSuspend, true
+	}
+	return engine.ActionRestore, true
+}
+
+func resourceRow(res engine.ResourceStatusItem, widths []int) string {
+	status := "ACTIVE"
+	if !res.Exists {
+		status = "MISSING"
+	} else if res.CurrentSuspended {
+		status = "SUSPENDED"
+	}
+
+	original := "-"
+	if res.OriginalSuspended != nil {
+		if *res.OriginalSuspended {
+			original = "SUSPENDED"
+		} else {
+			original = "ACTIVE"
+		}
+	}
+
+	ready := res.Ready
+	if res.LaggingObservation {
+		ready += " (!)"
+	}
+
+	cells := []string{
+		cell(res.Kind, widths[0]),
+		cell(res.Namespace, widths[1]),
+		cell(res.Name, widths[2]),
+		cell(status, widths[3]),
+		cell(original, widths[4]),
+		cell(ready, widths[5]),
+	}
+	return strings.Join(cells, " ")
+}
+
+func windowRows(rows []string, cursor, maxVisible int) ([]string, int) {
+	if maxVisible <= 0 || len(rows) == 0 {
+		return nil, 0
+	}
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor >= len(rows) {
+		cursor = len(rows) - 1
+	}
+	if len(rows) <= maxVisible {
+		return rows, 0
+	}
+	start := cursor - maxVisible + 1
+	if start < 0 {
+		start = 0
+	}
+	end := start + maxVisible
+	if end > len(rows) {
+		end = len(rows)
+		start = end - maxVisible
+	}
+	return rows[start:end], start
+}
+
+func allocWidths(total int, weights []int) []int {
+	n := len(weights)
+	widths := make([]int, n)
+	if n == 0 {
+		return widths
+	}
+	sum := 0
+	for _, w := range weights {
+		sum += w
+	}
+	if sum <= 0 {
+		sum = n
+	}
+
+	assigned := 0
+	for i := 0; i < n; i++ {
+		if i == n-1 {
+			widths[i] = total - assigned
+		} else {
+			widths[i] = total * weights[i] / sum
+		}
+		if widths[i] < 1 {
+			widths[i] = 1
+		}
+		assigned += widths[i]
+	}
+
+	for assigned > total {
+		maxIdx := 0
+		for i := range widths {
+			if widths[i] > widths[maxIdx] {
+				maxIdx = i
+			}
+		}
+		if widths[maxIdx] <= 1 {
+			break
+		}
+		widths[maxIdx]--
+		assigned--
+	}
+	if assigned < total {
+		widths[n-1] += total - assigned
+	}
+	return widths
+}
+
+func padBetween(left, right string, width int) string {
+	left = truncateText(left, width)
+	right = truncateText(right, width)
+	lw := lipgloss.Width(left)
+	rw := lipgloss.Width(right)
+	if lw+rw+1 > width {
+		return cell(left, width)
+	}
+	return left + strings.Repeat(" ", width-lw-rw) + right
+}
+
+func cell(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	s = truncateText(s, width)
+	if pad := width - lipgloss.Width(s); pad > 0 {
+		s += strings.Repeat(" ", pad)
 	}
 	return s
+}
+
+func cellRight(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	s = truncateText(s, width)
+	if pad := width - lipgloss.Width(s); pad > 0 {
+		s = strings.Repeat(" ", pad) + s
+	}
+	return s
+}
+
+func truncateText(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= width {
+		return s
+	}
+	r := []rune(s)
+	for len(r) > 0 {
+		r = r[:len(r)-1]
+		if lipgloss.Width(string(r))+1 <= width {
+			break
+		}
+	}
+	if width == 1 {
+		return "…"
+	}
+	return string(r) + "…"
 }
 
 // Run launches the Bubble Tea TUI program.
