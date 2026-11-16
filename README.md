@@ -181,13 +181,21 @@ Launches the full interactive terminal UI powered by Bubble Tea:
 ./killswitch tui
 ```
 
+The main screen is a k9s-style table of switches. The Flux reconciliation switch is always listed first.
+
+The `SWITCH` column is the control position: `● ON` when reconciliation is active and `○ OFF` only when every reachable target is fully suspended. The `CLUSTER` column shows the observed aggregate (`RESTORED`, `SUSPENDED`, `MIXED`, `DRIFT`, `MISSING`) so an inconsistent cluster never masquerades as a switch position.
+
 **Keybindings:**
-- `s` — Plan and prompt to **Suspend** all resources
-- `r` — Plan and prompt to **Restore** all resources
-- `d` — Open **Dry-run** preview modal
-- `u` — Refresh live cluster status
-- `y` / `n` — Confirm or cancel actions in modal
+- `↑` / `↓` (or `k` / `j`) — Select a switch (in the properties view: scroll resources)
+- `Enter` — Open the selected switch's properties and list all Flux resources
+- `Esc` — Return from the properties view to the switch list
+- `Ctrl+T` (or `t` / `Space`) — Toggle the selected switch and open the confirmation dialog
+- `y` / `Enter` — Confirm the pending change
+- `n` / `Esc` — Cancel the pending change
+- `r` / `u` — Refresh live cluster status
 - `q` / `Ctrl+C` — Exit TUI
+
+> `Ctrl+Enter` is not distinguishable from plain `Enter` in Bubble Tea, so `Ctrl+T` is used for toggling.
 
 ---
 
