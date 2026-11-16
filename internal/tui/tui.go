@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/rykhalskyi/killswitch/internal/config"
 	"github.com/rykhalskyi/killswitch/internal/engine"
+	"github.com/rykhalskyi/killswitch/internal/version"
 )
 
 // Colors follow a k9s / flux9s inspired palette.
@@ -44,6 +45,10 @@ var (
 
 	subtitleStyle = lipgloss.NewStyle().
 			Foreground(muted)
+
+	versionStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(cyan)
 
 	panelTitleStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -423,27 +428,43 @@ func (m Model) renderHeader(height int) string {
 
 	logo := styledLogo()
 	logoWidth := lipgloss.Width(logo[0])
-	combinedWidth := logoWidth + 3 + wordWidth
+	combinedWidth := wordWidth + 2 + logoWidth
+
+	verText := version.Display()
+	verWidth := 2 + lipgloss.Width(verText)
+	verSuffix := "  " + versionStyle.Render(verText)
+
+	needForWord := wordWidth
+	needForLogo := combinedWidth
+	if height < 5 {
+		// No subtitle row: the version shares the last wordmark row.
+		needForWord += verWidth
+		needForLogo += verWidth
+	}
 
 	// The block wordmark needs four rows. Below that, use a compact one-liner.
-	if height < 4 || m.width < wordWidth {
-		title := truncateText("KILL SWITCH — FLUX RECONCILIATION CONTROLLER", m.width)
-		return lipgloss.Place(m.width, height, lipgloss.Center, lipgloss.Center, bannerStyle.Render(title))
+	if height < 4 || m.width < needForWord {
+		title := truncateText("KILL SWITCH  "+verText, m.width)
+		return lipgloss.Place(m.width, height, lipgloss.Left, lipgloss.Center, bannerStyle.Render(title))
 	}
 
 	lines := make([]string, 0, 5)
-	if m.width >= combinedWidth {
+	if m.width >= needForLogo {
 		for i := 0; i < 4; i++ {
-			lines = append(lines, logo[i]+"   "+word[i])
+			lines = append(lines, word[i]+"  "+logo[i])
 		}
 	} else {
 		lines = append(lines, word...)
 	}
+
 	if height >= 5 {
-		lines = append(lines, subtitleStyle.Render("FLUX RECONCILIATION CONTROLLER"))
+		subtitle := subtitleStyle.Render("FLUX RECONCILIATION CONTROLLER") + "  ·  " + versionStyle.Render(verText)
+		lines = append(lines, subtitle)
+	} else {
+		lines[len(lines)-1] += verSuffix
 	}
 
-	return lipgloss.Place(m.width, height, lipgloss.Center, lipgloss.Center, strings.Join(lines, "\n"))
+	return lipgloss.Place(m.width, height, lipgloss.Left, lipgloss.Center, strings.Join(lines, "\n"))
 }
 
 // styledWordmark renders "KILL SWITCH" as block letters, red for KILL and

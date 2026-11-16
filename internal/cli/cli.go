@@ -16,6 +16,7 @@ import (
 	"github.com/rykhalskyi/killswitch/internal/engine"
 	"github.com/rykhalskyi/killswitch/internal/flux"
 	"github.com/rykhalskyi/killswitch/internal/tui"
+	"github.com/rykhalskyi/killswitch/internal/version"
 )
 
 // Main is the entry point for the killswitch CLI application.
@@ -23,6 +24,13 @@ func Main(args []string) int {
 	if len(args) < 2 {
 		printUsage()
 		return engine.ExitConfigOrConnection
+	}
+
+	for _, arg := range args[1:] {
+		if arg == "--version" || arg == "-v" {
+			fmt.Printf("killswitch %s\n", version.Display())
+			return engine.ExitSuccess
+		}
 	}
 
 	cmd, cmdArgs := parseCommand(args)
@@ -38,6 +46,9 @@ func Main(args []string) int {
 		return handleHistory(cmdArgs)
 	case "tui":
 		return handleTUI(cmdArgs)
+	case "version":
+		fmt.Printf("killswitch %s\n", version.Display())
+		return engine.ExitSuccess
 	case "help", "-h", "--help":
 		printUsage()
 		return engine.ExitSuccess
@@ -55,6 +66,7 @@ func parseCommand(args []string) (string, []string) {
 		"restore": true,
 		"history": true,
 		"tui":     true,
+		"version": true,
 		"help":    true,
 	}
 
@@ -95,7 +107,7 @@ func parseCommand(args []string) (string, []string) {
 }
 
 func printUsage() {
-	fmt.Printf(`killswitch — Reversible Flux reconciliation freeze controller
+	fmt.Printf(`killswitch %s — Reversible Flux reconciliation freeze controller
 
 Usage:
   killswitch <command> [flags]
@@ -106,6 +118,7 @@ Commands:
   restore  Unfreeze and restore resources to their recorded states
   history  Show journaled operation history
   tui      Interactive terminal interface
+  version  Print the application version
 
 Global Flags:
   --config <path>       Path to config YAML (default: config.yaml)
@@ -122,7 +135,8 @@ Examples:
   killswitch restore --force
   killswitch history --limit 5
   killswitch tui
-`)
+  killswitch version
+`, version.Display())
 }
 
 type commonFlags struct {
