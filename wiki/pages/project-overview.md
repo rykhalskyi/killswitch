@@ -21,28 +21,35 @@ It is a specialized infrastructure operations controller, not a general-purpose 
 
 ## Technology stack
 
-| Component      | Choice      |
-| -------------- | ----------- |
-| Language       | Go          |
-| TUI            | Bubble Tea  |
-| Kubernetes API | client-go   |
-| Configuration  | YAML        |
-| Journal        | SQLite      |
-| Logging        | Go `slog`   |
+| Component      | Choice                              |
+| -------------- | ----------------------------------- |
+| Language       | Go                                  |
+| TUI            | Bubble Tea + lipgloss               |
+| Kubernetes API | client-go (`dynamic` + `unstructured`) |
+| Configuration  | YAML                                |
+| Journal        | `journal.jsonl` + atomic `state.json` (D-03) |
+| Logging        | Go `slog`                           |
 
-## Planned project structure
+## Project structure
 
 ```
 kill-switch/
-├── cmd/kill-switch/main.go
+├── cmd/killswitch/main.go
 ├── internal/
-│   ├── tui/
-│   ├── flux/          # client.go, reconcile.go, state.go
-│   ├── journal/       # sqlite.go
-│   └── config/        # config.go
-├── config/config.yaml
+│   ├── cli/           # command parsing and output
+│   ├── config/        # YAML loading and validation
+│   ├── engine/        # planning, execution, recovery, conflicts
+│   ├── flux/          # dynamic client for Flux CRDs
+│   ├── journal/       # append-only JSONL journal
+│   ├── state/         # state.json snapshots and flock
+│   ├── tui/           # Bubble Tea views and overlay compositor
+│   └── version/
+├── config.example.yaml
+├── rbac.example.yaml
 └── go.mod
 ```
+
+State lives under `$XDG_STATE_HOME/killswitch/` (`journal.jsonl`, `state.json`), never in the repo.
 
 ## Roadmap
 
@@ -54,13 +61,16 @@ kill-switch/
 6. **Phase 6 — Workflow orchestration** (high, needs Phases 3–5)
 7. **Phase 7 — Polish and distribution** (high, ongoing)
 
-Phase 1 and the Phase 2 gap closure are implemented; see [T2](tickets/t2-phase2-safety-recovery.md). Keep new switches small; avoid abstractions until needed.
+Phases 1–2 are implemented; see [T2](tickets/t2-phase2-safety-recovery.md). The TUI also ships a breadcrumb path and a confirm dialog composited over the dimmed table. Phase 3 is planned in [T3](tickets/t3-phase3-workload-controls.md) against the [extension architecture spec](specs/extension-architecture.md), which defines the switches → workflows → action-handler layering for Phases 3–6.
 
 ## Key concepts
 
+- **Switch** — the user-visible control in the TUI. A switch is an operational state (ON/OFF), not a command; it must not reference Kubernetes, Flux, SSH, or scripts.
+- **Workflow** — the ordered steps a switch runs in each direction, with declared prerequisites.
+- **Action handler** — the Go capability that validates, captures, executes, verifies, and restores one step.
 - **Resource** — a configured target (Flux `Kustomization` / `HelmRelease`, later workloads, nodes, network rules) identified by kind, namespace, and name.
-- **Operation** — a suspend or restore run over all configured resources, journaled in SQLite.
-- **Original state** — the suspension/scale/replica state captured before an operation and used to restore.
-- **Partial failure** — some resources succeeded and others did not; the global state must never be shown as fully suspended or active until every configured resource is verified.
+- **Operation** — a switch transition run over its workflow steps, journaled in `journal.jsonl`.
+- **Original state** — the per-target state captured before an operation and used to restore it; typed per action, not a single boolean.
+- **Partial failure** — some steps succeeded and others did not; a switch must never show a clean ON/OFF state until every configured target is verified.
 
 See [build-deploy](build-deploy.md) for commands.

@@ -147,6 +147,8 @@ killswitch tui
 
 The panel title is a breadcrumb showing where you are, for example `Flux Controls › Flux Reconciliation › Properties` or `Flux Controls › Flux Reconciliation › Operation History`.
 
+The confirmation dialog is composited over the dimmed switch table, so the underlying view stays visible while the pending change is reviewed.
+
 Keybindings:
 - `↑` / `↓` (or `k` / `j`) — Select a switch, scroll properties, or scroll history
 - `Enter` — Open the selected switch's properties
