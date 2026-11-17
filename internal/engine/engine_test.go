@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/rykhalskyi/killswitch/internal/config"
 	"github.com/rykhalskyi/killswitch/internal/flux"
+	"github.com/rykhalskyi/killswitch/internal/journal"
 )
 
 type mockFluxClient struct {
@@ -310,6 +312,231 @@ func TestEngineConflictDetection(t *testing.T) {
 	}
 	if !hasConflict {
 		t.Error("expected history to record conflict event")
+	}
+}
+
+func seedJournal(t *testing.T, dir string, events []journal.Event) {
+	t.Helper()
+	j, err := journal.Open(filepath.Join(dir, "journal.jsonl"))
+	if err != nil {
+		t.Fatalf("opening seed journal: %v", err)
+	}
+	defer j.Close()
+	for i := range events {
+		if err := j.Append(&events[i]); err != nil {
+			t.Fatalf("appending seed event: %v", err)
+		}
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+func populateActiveResources(client *mockFluxClient) {
+	client.resources["Kustomization/flux-system/flux-system"] = &flux.ResourceInfo{Kind: "Kustomization", Namespace: "flux-system", Name: "flux-system", Suspended: false, Ready: "True"}
+	client.resources["Kustomization/flux-system/apps"] = &flux.ResourceInfo{Kind: "Kustomization", Namespace: "flux-system", Name: "apps", Suspended: false, Ready: "True"}
+	client.resources["HelmRelease/monitoring/kube-prometheus-stack"] = &flux.ResourceInfo{Kind: "HelmRelease", Namespace: "monitoring", Name: "kube-prometheus-stack", Suspended: false, Ready: "True"}
+	client.resources["HelmRelease/traefik/traefik"] = &flux.ResourceInfo{Kind: "HelmRelease", Namespace: "traefik", Name: "traefik", Suspended: false, Ready: "True"}
+}
+
+func TestEngineResumeInterruptedSuspendOnlyTouchesActiveResources(t *testing.T) {
+	cfg := createTestConfig()
+	client := newMockFluxClient()
+	populateActiveResources(client)
+
+	stateDir := t.TempDir()
+	seedJournal(t, stateDir, []journal.Event{
+		{Op: "01RESUME", Event: journal.EventOpStart, Action: string(ActionSuspend), Context: "talos", Targets: 4},
+		{Op: "01RESUME", Event: journal.EventResourceIntent, Action: string(ActionSuspend), Kind: "Kustomization", Namespace: "flux-system", Name: "apps", From: boolPtr(false), To: boolPtr(true)},
+	})
+
+	eng := New(cfg, client, stateDir, "talos", nil)
+	ctx := context.Background()
+	if err := eng.Init(ctx); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer eng.Close()
+
+	status, err := eng.Status(ctx)
+	if err != nil {
+		t.Fatalf("Status failed: %v", err)
+	}
+	if !status.Incomplete || status.ActiveOp == nil {
+		t.Fatalf("expected interrupted operation to be visible, got %+v", status)
+	}
+
+	plan, err := eng.BuildPlan(ctx, ActionSuspend)
+	if err != nil {
+		t.Fatalf("BuildPlan failed: %v", err)
+	}
+	if len(plan.Items) != 1 || plan.Items[0].Resource.Key() != "Kustomization/flux-system/apps" {
+		t.Fatalf("resume should only plan the touched resource, got %+v", plan.Items)
+	}
+
+	report, err := eng.Execute(ctx, ActionSuspend, false, nil)
+	if err != nil {
+		t.Fatalf("Execute(resume suspend) failed: %v", err)
+	}
+	if report.OK != 1 || report.Failed != 0 {
+		t.Fatalf("expected 1 OK, got OK=%d Failed=%d", report.OK, report.Failed)
+	}
+	if !client.resources["Kustomization/flux-system/apps"].Suspended {
+		t.Error("touched resource was not resumed")
+	}
+	for _, key := range []string{
+		"Kustomization/flux-system/flux-system",
+		"HelmRelease/monitoring/kube-prometheus-stack",
+		"HelmRelease/traefik/traefik",
+	} {
+		if client.resources[key].Suspended {
+			t.Errorf("resume touched untouched resource %s", key)
+		}
+	}
+	if eng.State().ActiveOp != nil {
+		t.Error("active operation was not cleared")
+	}
+
+	finalStatus, err := eng.Status(ctx)
+	if err != nil {
+		t.Fatalf("Status after resume failed: %v", err)
+	}
+	if finalStatus.GlobalStatus != GlobalStatusPartial {
+		t.Errorf("resume must not report a clean global state, got %s", finalStatus.GlobalStatus)
+	}
+}
+
+func TestEngineRestoreInterruptedSuspendOnlyUndoTouchedResources(t *testing.T) {
+	cfg := createTestConfig()
+	client := newMockFluxClient()
+	populateActiveResources(client)
+
+	stateDir := t.TempDir()
+	seedJournal(t, stateDir, []journal.Event{
+		{Op: "01UNDO", Event: journal.EventOpStart, Action: string(ActionSuspend), Context: "talos", Targets: 4},
+		{Op: "01UNDO", Event: journal.EventResourceIntent, Action: string(ActionSuspend), Kind: "Kustomization", Namespace: "flux-system", Name: "apps", From: boolPtr(false), To: boolPtr(true)},
+		{Op: "01UNDO", Event: journal.EventResourceResult, Kind: "Kustomization", Namespace: "flux-system", Name: "apps", Status: journal.StatusOk, Observed: boolPtr(true)},
+		{Op: "01UNDO", Event: journal.EventResourceIntent, Action: string(ActionSuspend), Kind: "Kustomization", Namespace: "flux-system", Name: "flux-system", From: boolPtr(false), To: boolPtr(true)},
+	})
+
+	// Simulate the patch landing before the crash for both touched resources.
+	client.resources["Kustomization/flux-system/apps"].Suspended = true
+	client.resources["Kustomization/flux-system/flux-system"].Suspended = true
+
+	eng := New(cfg, client, stateDir, "talos", nil)
+	ctx := context.Background()
+	if err := eng.Init(ctx); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer eng.Close()
+
+	plan, err := eng.BuildPlan(ctx, ActionRestore)
+	if err != nil {
+		t.Fatalf("BuildPlan failed: %v", err)
+	}
+	if len(plan.Items) != 2 {
+		t.Fatalf("undo should plan the two touched resources, got %d", len(plan.Items))
+	}
+	for _, item := range plan.Items {
+		if item.TargetSuspended {
+			t.Errorf("undo target for %s should be false", item.Resource.Key())
+		}
+	}
+	if len(plan.Conflicts) != 0 {
+		t.Fatalf("in-flight recovery must not false-conflict, got %+v", plan.Conflicts)
+	}
+
+	report, err := eng.Execute(ctx, ActionRestore, false, nil)
+	if err != nil {
+		t.Fatalf("Execute(undo restore) failed: %v", err)
+	}
+	if report.OK != 2 || report.Failed != 0 {
+		t.Fatalf("expected 2 OK, got OK=%d Failed=%d", report.OK, report.Failed)
+	}
+	for _, key := range []string{
+		"Kustomization/flux-system/apps",
+		"Kustomization/flux-system/flux-system",
+	} {
+		if client.resources[key].Suspended {
+			t.Errorf("touched resource %s was not undone", key)
+		}
+	}
+	if eng.State().ActiveOp != nil {
+		t.Error("active operation was not cleared")
+	}
+
+	finalStatus, err := eng.Status(ctx)
+	if err != nil {
+		t.Fatalf("Status after undo failed: %v", err)
+	}
+	if finalStatus.GlobalStatus != GlobalStatusRestored {
+		t.Errorf("expected restored after undo, got %s", finalStatus.GlobalStatus)
+	}
+}
+
+func TestEngineConflictDetectionAfterRestore(t *testing.T) {
+	cfg := createTestConfig()
+	client := newMockFluxClient()
+	populateActiveResources(client)
+
+	stateDir := t.TempDir()
+	eng := New(cfg, client, stateDir, "talos", nil)
+	ctx := context.Background()
+	if err := eng.Init(ctx); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer eng.Close()
+
+	if _, err := eng.Execute(ctx, ActionSuspend, false, nil); err != nil {
+		t.Fatalf("Suspend failed: %v", err)
+	}
+	if _, err := eng.Execute(ctx, ActionRestore, false, nil); err != nil {
+		t.Fatalf("Restore failed: %v", err)
+	}
+
+	// External change in the opposite direction: suspended after a clean restore.
+	client.resources["Kustomization/flux-system/apps"].Suspended = true
+
+	status, err := eng.Status(ctx)
+	if err != nil {
+		t.Fatalf("Status failed: %v", err)
+	}
+	if status.GlobalStatus == GlobalStatusRestored || status.GlobalStatus == GlobalStatusSuspended {
+		t.Fatalf("drifted cluster must not report a clean state, got %s", status.GlobalStatus)
+	}
+
+	plan, err := eng.BuildPlan(ctx, ActionSuspend)
+	if err != nil {
+		t.Fatalf("BuildPlan failed: %v", err)
+	}
+	if len(plan.Conflicts) != 1 || plan.Conflicts[0].Resource.Name != "apps" {
+		t.Fatalf("expected apps conflict after restore, got %+v", plan.Conflicts)
+	}
+
+	if _, err := eng.Execute(ctx, ActionSuspend, false, nil); err != ErrConflict {
+		t.Fatalf("expected ErrConflict, got %v", err)
+	}
+
+	events, err := journal.ReadAll(filepath.Join(stateDir, "journal.jsonl"))
+	if err != nil {
+		t.Fatalf("reading journal: %v", err)
+	}
+	var found bool
+	for _, ev := range events {
+		if ev.Event == journal.EventConflict && ev.Name == "apps" {
+			found = true
+			if ev.Expected == nil || *ev.Expected {
+				t.Errorf("expected journaled expectation false, got %v", ev.Expected)
+			}
+			if ev.Observed == nil || !*ev.Observed {
+				t.Errorf("expected journaled observation true, got %v", ev.Observed)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("conflict event was not journaled")
+	}
+
+	if _, err := eng.Execute(ctx, ActionSuspend, true, nil); err != nil {
+		t.Fatalf("forced suspend failed: %v", err)
 	}
 }
 

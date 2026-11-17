@@ -37,7 +37,9 @@ Phase 1 implements a **Level 2 Flux Freeze**: suspending and restoring configure
   - **Restore**: Unfreezes HelmReleases first (forward order), then Kustomizations (forward order), preventing health-check hangs on suspended Helm releases.
 - **Crash Proof**: Every intent is recorded to a write-ahead log (`journal.jsonl`) and synced (`fsync`) before any Kubernetes API patch is executed.
 - **Concurrency Protection**: Non-blocking `flock` prevents concurrent executions across separate terminals or scripts.
-- **Conflict Aware**: Detects out-of-band cluster modifications and refuses to overwrite without `--force`.
+- **Conflict Aware**: Detects out-of-band cluster modifications in either direction and refuses to overwrite without `--force`.
+- **History Everywhere**: `killswitch history` and the TUI `h` view read the same journal.
+- **Precise Recovery**: An interrupted operation resumes or undoes only the resources it actually touched.
 - **Zero Flux Go Dependencies**: Built directly on `k8s.io/client-go/dynamic` and discovery APIs.
 
 ---
@@ -186,13 +188,15 @@ The main screen is a k9s-style table of switches. The Flux reconciliation switch
 The `SWITCH` column is the control position: `● ON` when reconciliation is active and `○ OFF` only when every reachable target is fully suspended. The `CLUSTER` column shows the observed aggregate (`RESTORED`, `SUSPENDED`, `MIXED`, `DRIFT`, `MISSING`) so an inconsistent cluster never masquerades as a switch position.
 
 **Keybindings:**
-- `↑` / `↓` (or `k` / `j`) — Select a switch (in the properties view: scroll resources)
+- `↑` / `↓` (or `k` / `j`) — Select a switch (scroll resources in properties; scroll operations in history)
 - `Enter` — Open the selected switch's properties and list all Flux resources
-- `Esc` — Return from the properties view to the switch list
+- `Esc` — Return from the properties or history view to the previous screen
 - `Ctrl+T` (or `t` / `Space`) — Toggle the selected switch and open the confirmation dialog
+- `h` — Open the operation history recorded in `journal.jsonl`
 - `y` / `Enter` — Confirm the pending change
+- `f` — Confirm with force override when the plan shows conflicts
 - `n` / `Esc` — Cancel the pending change
-- `r` / `u` — Refresh live cluster status
+- `r` / `u` — Refresh live cluster status (and history)
 - `q` / `Ctrl+C` — Exit TUI
 
 > `Ctrl+Enter` is not distinguishable from plain `Enter` in Bubble Tea, so `Ctrl+T` is used for toggling.
@@ -254,17 +258,19 @@ Derived view of the active operation and recorded original states:
 
 ### Conflict Detection & `--force`
 
-If a resource's suspension state on the cluster changes out-of-band (e.g. manually edited via `kubectl` or another operator):
-- Kill Switch flags this as a `conflict`.
+If a resource's suspension state on the cluster no longer matches the state Kill Switch expects (e.g. manually edited via `kubectl` or another operator, in either direction):
+- Kill Switch flags this as a `conflict` and journals the expected and observed values.
 - Execution halts with **Exit Code 3**.
-- Use `--force` to acknowledge and proceed.
+- Use `--force`, or `f` in the TUI confirmation dialog, to acknowledge and proceed.
 
 ### Interrupted Run Recovery
 
 If the tool is terminated (e.g. `SIGKILL`, system reboot, power cut):
-1. `killswitch status` flags the interrupted operation.
-2. Running `killswitch suspend` resumes and completes remaining targets.
-3. Running `killswitch restore` restores any touched targets back to their original baseline.
+1. `killswitch status` flags the interrupted operation and its per-resource phases.
+2. Running `killswitch suspend` completes only the targets the interrupted operation had not verified.
+3. Running `killswitch restore` undoes only the targets the interrupted operation actually touched.
+
+Resources outside the interrupted operation are never re-planned or overwritten by recovery.
 
 ---
 

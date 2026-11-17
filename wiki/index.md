@@ -9,3 +9,4 @@
 
 ## Tickets
 - [tickets/t1-phase1-flux-toggle](pages/tickets/t1-phase1-flux-toggle.md) — Phase 1 plan for a Go CLI/TUI that suspends and restores all configured Flux Kustomizations and HelmReleases with JSON journaling and crash recovery.
+- [tickets/t2-phase2-safety-recovery](pages/tickets/t2-phase2-safety-recovery.md) — Phase 2 gap closure — TUI history, precise interrupted-run recovery, and per-resource conflict detection on top of the Phase 1 engine.

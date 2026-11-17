@@ -1,14 +1,36 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	"github.com/rykhalskyi/killswitch/internal/config"
 	"github.com/rykhalskyi/killswitch/internal/engine"
+	"github.com/rykhalskyi/killswitch/internal/flux"
 )
+
+type tuiFluxClient struct{}
+
+func (tuiFluxClient) DiscoverGVRs(context.Context) error { return nil }
+
+func (tuiFluxClient) GetGVR(string) (schema.GroupVersionResource, error) {
+	return schema.GroupVersionResource{}, nil
+}
+
+func (tuiFluxClient) GetResource(_ context.Context, kind, namespace, name string) (*flux.ResourceInfo, error) {
+	return &flux.ResourceInfo{Kind: kind, Namespace: namespace, Name: name, Ready: "True"}, nil
+}
+
+func (tuiFluxClient) PatchSuspend(_ context.Context, kind, namespace, name string, suspend bool) (*flux.ResourceInfo, error) {
+	return &flux.ResourceInfo{Kind: kind, Namespace: namespace, Name: name, Suspended: suspend, Ready: "True"}, nil
+}
 
 func sampleStatus(count int) *engine.StatusReport {
 	orig := false
@@ -48,6 +70,29 @@ func samplePlan(count int) *engine.Plan {
 		})
 	}
 	return plan
+}
+
+func sampleHistory(count int) []engine.HistoryItem {
+	items := make([]engine.HistoryItem, 0, count)
+	for i := 0; i < count; i++ {
+		status := "success"
+		if i%3 == 1 {
+			status = "partial"
+		} else if i%3 == 2 {
+			status = "interrupted"
+		}
+		items = append(items, engine.HistoryItem{
+			Op:         fmt.Sprintf("01TEST%02d", i),
+			Action:     "suspend",
+			StartedAt:  "2026-11-17T12:00:00Z",
+			Status:     status,
+			Targets:    15,
+			OK:         14,
+			Failed:     1,
+			DurationMs: 4200,
+		})
+	}
+	return items
 }
 
 func checkDimensions(t *testing.T, m Model, label string) {
@@ -95,6 +140,94 @@ func TestViewDimensions(t *testing.T) {
 		m.executing = true
 		m.execProgress = "[3/20] resource-03 (OK)"
 		checkDimensions(t, m, fmt.Sprintf("progress %dx%d", w, h))
+
+		m.executing = false
+		m.view = viewHistory
+		m.history = sampleHistory(20)
+		m.historyCursor = 19
+		checkDimensions(t, m, fmt.Sprintf("history %dx%d", w, h))
+	}
+}
+
+func TestHistoryView(t *testing.T) {
+	m := NewModel(nil)
+	m.width, m.height = 100, 24
+	m.view = viewHistory
+	m.history = sampleHistory(3)
+
+	view := m.View()
+	if !strings.Contains(view, "OPERATION HISTORY") {
+		t.Fatalf("expected history title, got:\n%s", view)
+	}
+	if !strings.Contains(view, "SUCCESS") {
+		t.Fatalf("expected operation status in history, got:\n%s", view)
+	}
+	if !strings.Contains(view, "4.2s") {
+		t.Fatalf("expected formatted duration in history, got:\n%s", view)
+	}
+}
+
+func TestHistoryNavigation(t *testing.T) {
+	m := NewModel(nil)
+	m.width, m.height = 100, 24
+	m.view = viewDetail
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	m = next.(Model)
+	if m.view != viewHistory || m.historyReturn != viewDetail {
+		t.Fatalf("h should open history from detail, got view=%v return=%v", m.view, m.historyReturn)
+	}
+
+	m.history = sampleHistory(3)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = next.(Model)
+	if m.historyCursor != 1 {
+		t.Fatalf("down should move history cursor, got %d", m.historyCursor)
+	}
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(Model)
+	if m.view != viewDetail {
+		t.Fatalf("esc should return to detail, got view=%v", m.view)
+	}
+}
+
+func TestTUIForceOverride(t *testing.T) {
+	cfg := &config.Config{Flux: config.FluxConfig{
+		Resources: []config.Resource{{Kind: config.KindKustomization, Namespace: "flux-system", Name: "apps"}},
+	}}
+	eng := engine.New(cfg, tuiFluxClient{}, t.TempDir(), "test", nil)
+	if err := eng.Init(context.Background()); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer eng.Close()
+
+	m := NewModel(eng)
+	m.pendingPlan = samplePlan(2)
+	m.pendingPlan.Conflicts = []engine.PlanItem{m.pendingPlan.Items[0]}
+	m.pendingAction = engine.ActionSuspend
+	m.confirmOpen = true
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = next.(Model)
+	if cmd == nil || !m.pendingForce || !m.executing || m.confirmOpen {
+		t.Fatalf("f should confirm a forced execution, got force=%v executing=%v confirm=%v", m.pendingForce, m.executing, m.confirmOpen)
+	}
+
+	done := time.After(5 * time.Second)
+	for {
+		select {
+		case _, ok := <-m.msgChan:
+			if !ok {
+				report, err := eng.History(1)
+				if err != nil || len(report) == 0 || report[0].Status != "success" {
+					t.Fatalf("forced execution was not journaled: %v %+v", err, report)
+				}
+				return
+			}
+		case <-done:
+			t.Fatal("timed out waiting for forced execution")
+		}
 	}
 }
 

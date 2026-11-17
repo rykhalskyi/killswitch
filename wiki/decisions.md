@@ -10,3 +10,5 @@ Append-only decision record. The "why" lives here; the full change history lives
 - [2026-11-08] D-06 — Build CLI-first with a thin Bubble Tea TUI over a shared engine — because the safety logic must be testable and scriptable
 - [2026-11-08] D-07 — Pin Go 1.26.10 from Fedora 44 — because Go was not installed and the distro package is current
 - [2026-11-08] D-08 — Exclude GitRepository from Phase 1 — because suspending it does not prevent reconciliation and would add a third verification path
+- [2026-11-17] D-09 — Phase 2 recovery scopes plans to ActiveOp.ResourceStates — because replaying untouched resources could overwrite external state
+- [2026-11-17] D-10 — Conflict detection compares per-resource expected vs observed in both directions and journals real expected values — because last-op-only checks missed post-restore drift

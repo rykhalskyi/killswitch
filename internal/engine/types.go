@@ -46,15 +46,16 @@ const (
 
 // PlanItem describes the planned action on a single resource.
 type PlanItem struct {
-	Resource         config.Resource    `json:"resource"`
-	Info             *flux.ResourceInfo `json:"info,omitempty"`
-	CurrentSuspended bool               `json:"currentSuspended"`
-	TargetSuspended  bool               `json:"targetSuspended"`
-	Original         bool               `json:"original"`
-	Exists           bool               `json:"exists"`
-	WillChange       bool               `json:"willChange"`
-	Conflict         bool               `json:"conflict"`
-	ConflictReason   string             `json:"conflictReason,omitempty"`
+	Resource          config.Resource    `json:"resource"`
+	Info              *flux.ResourceInfo `json:"info,omitempty"`
+	CurrentSuspended  bool               `json:"currentSuspended"`
+	TargetSuspended   bool               `json:"targetSuspended"`
+	Original          bool               `json:"original"`
+	Exists            bool               `json:"exists"`
+	WillChange        bool               `json:"willChange"`
+	ExpectedSuspended *bool              `json:"expectedSuspended,omitempty"`
+	Conflict          bool               `json:"conflict"`
+	ConflictReason    string             `json:"conflictReason,omitempty"`
 }
 
 // Plan represents the proposed changes before execution.

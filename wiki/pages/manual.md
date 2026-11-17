@@ -6,7 +6,7 @@ summary: Comprehensive user manual and CLI/TUI operational guide for Kill Switch
 
 # Kill Switch Manual
 
-This manual explains how to configure, operate, and troubleshoot Kill Switch (`killswitch`) for Phase 1 (Level 2 Flux freeze). For architecture principles, see [project-overview](project-overview.md); for compilation and tests, see [build-deploy](build-deploy.md).
+This manual explains how to configure, operate, and troubleshoot Kill Switch (`killswitch`) for the Phase 1 Level 2 Flux freeze plus the Phase 2 safety and recovery work. For architecture principles, see [project-overview](project-overview.md); for compilation and tests, see [build-deploy](build-deploy.md).
 
 ---
 
@@ -146,23 +146,29 @@ killswitch tui
 ```
 
 Keybindings:
-- `s` — Plan and prompt to **Suspend**
-- `r` — Plan and prompt to **Restore**
-- `d` — Open **Dry-run** modal
-- `u` — Refresh status
-- `y` / `n` — Confirm or cancel modal prompts
+- `↑` / `↓` (or `k` / `j`) — Select a switch, scroll properties, or scroll history
+- `Enter` — Open the selected switch's properties
+- `Esc` — Return from properties or history to the previous screen
+- `Ctrl+T` (or `t` / `Space`) — Toggle the selected switch and open the confirmation modal
+- `h` — Open the operation history view
+- `y` / `Enter` — Confirm the pending change
+- `f` — Confirm with force override when the plan shows conflicts
+- `n` / `Esc` — Cancel the pending change
+- `r` / `u` — Refresh live status (and history)
 - `q` / `Ctrl+C` — Exit
 
 ---
 
 ### 3.5 Operation History
 
-Query the write-ahead journal (`journal.jsonl`):
+Query the write-ahead journal (`journal.jsonl`) from the CLI or TUI:
 
 ```sh
 killswitch history --limit 10
 killswitch history --json
 ```
+
+In the TUI, press `h` to open the same history view; `↑`/`↓` scrolls and `Esc` returns. Both read `Engine.History`, so the CLI and TUI always agree.
 
 Displays timestamp, operation ID, action, outcome status, targets count, OK count, failed count, and duration in milliseconds.
 
@@ -188,17 +194,21 @@ Located at `$XDG_STATE_HOME/killswitch/journal.jsonl` (mode `0600`):
 - Concurrent invocations immediately abort with exit code `4`.
 
 ### 4.4 Conflict Detection
-- If a target resource's suspension state on the cluster changes out-of-band, Kill Switch detects a conflict.
+- Kill Switch compares each target's observed `spec.suspend` with the state it expects from the last successful operation and the recorded originals.
+- Drift is detected in both directions: external un-suspend after a freeze and external suspend after a restore.
+- Conflicts are journaled with the real `expected` and `observed` values.
 - Execution halts with exit code `3`.
-- Override intentional out-of-band changes by providing `--force`:
+- Override intentional out-of-band changes by providing `--force`, or by pressing `f` in the TUI confirmation modal:
   ```sh
   killswitch restore --force
   ```
 
 ### 4.5 Interrupted Run Recovery
-- If terminated mid-run, `status` surfaces the interrupted operation and affected resources.
-- `killswitch suspend` resumes and completes remaining targets.
-- `killswitch restore` reverts touched targets back to their original recorded baselines.
+- If terminated mid-run, `status` surfaces the interrupted operation and its per-resource phases.
+- Recovery is scoped to the resources recorded in `ActiveOp.ResourceStates`.
+- `killswitch suspend` completes only the targets the interrupted suspend had not verified as suspended.
+- `killswitch restore` reverts only the targets the interrupted operation actually touched, using their recorded originals.
+- Resources outside the interrupted operation are left untouched.
 
 ---
 

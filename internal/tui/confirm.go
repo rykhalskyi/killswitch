@@ -72,18 +72,30 @@ func (m Model) renderConfirm(bodyHeight int) string {
 		lines = append(lines, cell(fmt.Sprintf("%2d. %s/%s → %s", i+1, item.Resource.Kind, item.Resource.Name, targetState), contentW))
 	}
 
+	footer := "[y/enter] Confirm    [n/esc] Cancel"
+	if len(plan.Conflicts) > 0 {
+		footer = "[y/enter] Confirm    [f] Force override    [n/esc] Cancel"
+	}
+
 	if len(plan.Items) > show {
 		lines = append(lines, cell(fmt.Sprintf("… and %d more", len(plan.Items)-show), contentW))
 	} else if len(plan.Conflicts) > 0 {
-		lines = append(lines, modalWarnStyle.Render(cell("⚠ conflicts detected — execution may fail", contentW)))
+		reason := plan.Conflicts[0].ConflictReason
+		if reason == "" {
+			reason = "conflicts detected — execution may fail"
+		}
+		lines = append(lines, modalWarnStyle.Render(cell("⚠ "+reason, contentW)))
+		if len(plan.Conflicts) > 1 {
+			lines = append(lines, modalWarnStyle.Render(cell(fmt.Sprintf("⚠ and %d more conflicts", len(plan.Conflicts)-1), contentW)))
+		}
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, cell("[y/enter] Confirm    [n/esc] Cancel", contentW))
+	lines = append(lines, cell(footer, contentW))
 
 	if len(lines) > maxLines {
 		lines = lines[:maxLines]
-		lines[maxLines-1] = cell("[y/enter] Confirm    [n/esc] Cancel", contentW)
+		lines[maxLines-1] = cell(footer, contentW)
 	}
 
 	return lipgloss.Place(m.width, bodyHeight, lipgloss.Center, lipgloss.Center, modalBox.Render(strings.Join(lines, "\n")))

@@ -160,8 +160,9 @@ func (e *Engine) OrderedResources(action Action) []config.Resource {
 }
 
 // BuildPlan queries the cluster and builds the execution plan for action.
+// With an interrupted operation it plans only the resources that operation touched.
 func (e *Engine) BuildPlan(ctx context.Context, action Action) (*Plan, error) {
-	ordered := e.OrderedResources(action)
+	ordered := e.planResources(action)
 	plan := &Plan{
 		Action: action,
 	}
@@ -187,48 +188,32 @@ func (e *Engine) BuildPlan(ctx context.Context, action Action) (*Plan, error) {
 		item.Info = info
 		item.CurrentSuspended = info.Suspended
 
-		// Determine original and target
 		orig, hasOrig := e.state.OriginalSuspended[key]
 		if action == ActionSuspend {
 			item.TargetSuspended = true
-			if info.Suspended {
-				if hasOrig {
-					item.Original = orig
-				} else {
-					item.Original = true // suspended outside the tool
-				}
+			if info.Suspended && !hasOrig {
+				item.Original = true // suspended outside the tool
 			} else {
-				item.Original = false
-			}
-
-			// Check for conflict: if previous completed operation was suspend and this is false
-			if e.state.LastCompletedOp != nil && e.state.LastCompletedOp.Action == string(ActionSuspend) &&
-				e.state.LastCompletedOp.Status == journal.StatusSuccess && !info.Suspended {
-				item.Conflict = true
-				item.ConflictReason = "resource was un-suspended outside killswitch"
-				plan.Conflicts = append(plan.Conflicts, item)
-			}
-		} else { // Restore
-			if hasOrig {
 				item.Original = orig
-				item.TargetSuspended = orig
-			} else {
-				item.Original = false
-				item.TargetSuspended = false
 			}
+		} else {
+			item.Original = orig
+			item.TargetSuspended = orig
+		}
 
-			// Conflict detection on restore:
-			// If killswitch suspended the cluster (last op suspend), expected was true.
-			// If observed is false, it was un-suspended outside killswitch!
-			if e.state.LastCompletedOp != nil && e.state.LastCompletedOp.Action == string(ActionSuspend) &&
-				e.state.LastCompletedOp.Status == journal.StatusSuccess && !info.Suspended {
+		if expected, ok := e.expectedSuspended(key); ok {
+			item.ExpectedSuspended = expected
+			if info.Suspended != *expected {
 				item.Conflict = true
-				item.ConflictReason = "resource was un-suspended outside killswitch"
+				item.ConflictReason = fmt.Sprintf(
+					"resource was modified outside killswitch: expected spec.suspend=%t, observed %t",
+					*expected, info.Suspended,
+				)
 				plan.Conflicts = append(plan.Conflicts, item)
 			}
 		}
 
-		item.WillChange = (item.CurrentSuspended != item.TargetSuspended)
+		item.WillChange = item.CurrentSuspended != item.TargetSuspended
 		plan.Items = append(plan.Items, item)
 	}
 
@@ -317,15 +302,14 @@ func (e *Engine) Status(ctx context.Context) (*StatusReport, error) {
 		report.Resources = append(report.Resources, item)
 	}
 
-	if anyMissing {
+	switch {
+	case anyMissing:
 		report.GlobalStatus = GlobalStatusPartial
-	} else if allSuspended {
+	case allSuspended:
 		report.GlobalStatus = GlobalStatusSuspended
-	} else if allMatchesOriginal && (e.state.LastCompletedOp != nil && e.state.LastCompletedOp.Action == string(ActionRestore)) {
+	case allMatchesOriginal && e.state.LastCompletedOp != nil && e.state.LastCompletedOp.Action == string(ActionRestore):
 		report.GlobalStatus = GlobalStatusRestored
-	} else if allMatchesOriginal && len(e.state.OriginalSuspended) > 0 {
-		report.GlobalStatus = GlobalStatusRestored
-	} else {
+	default:
 		report.GlobalStatus = GlobalStatusPartial
 	}
 
@@ -355,6 +339,9 @@ func (e *Engine) Execute(ctx context.Context, action Action, force bool, onProgr
 		// Append conflict events to journal under the same opID
 		for _, conf := range plan.Conflicts {
 			exp := true
+			if conf.ExpectedSuspended != nil {
+				exp = *conf.ExpectedSuspended
+			}
 			obs := conf.CurrentSuspended
 			_ = e.journal.Append(&journal.Event{
 				Op:        opID,
@@ -366,6 +353,7 @@ func (e *Engine) Execute(ctx context.Context, action Action, force bool, onProgr
 				Name:      conf.Resource.Name,
 				Expected:  &exp,
 				Observed:  &obs,
+				Error:     conf.ConflictReason,
 			})
 		}
 		return nil, ErrConflict
