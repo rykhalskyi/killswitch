@@ -154,6 +154,27 @@ func TestViewDimensions(t *testing.T) {
 	}
 }
 
+func TestConfirmOverlayKeepsBackground(t *testing.T) {
+	m := NewModel(nil)
+	m.width, m.height = 100, 30
+	m.status = sampleStatus(15)
+	m.pendingPlan = samplePlan(3)
+	m.pendingAction = engine.ActionSuspend
+	m.confirmOpen = true
+
+	view := m.View()
+	if !strings.Contains(view, "CONFIRM SWITCH CHANGE") {
+		t.Fatalf("expected confirm dialog, got:\n%s", view)
+	}
+	if !strings.Contains(view, "DESCRIPTION") {
+		t.Fatalf("expected switch table to remain visible behind the dialog, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Flux Reconciliation") {
+		t.Fatalf("expected switch name in the background table, got:\n%s", view)
+	}
+	checkDimensions(t, m, "confirm overlay")
+}
+
 func TestHistoryView(t *testing.T) {
 	m := NewModel(nil)
 	m.width, m.height = 100, 24
