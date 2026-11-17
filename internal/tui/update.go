@@ -36,7 +36,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pendingPlan = msg.plan
 		m.pendingAction = msg.action
+		m.pendingForce = false
 		m.confirmOpen = true
+		return m, nil
+
+	case historyMsg:
+		if msg.err != nil {
+			m.errorMessage = fmt.Sprintf("Error loading history: %v", msg.err)
+		} else {
+			m.history = msg.items
+			m.errorMessage = ""
+			if m.historyCursor >= len(m.history) {
+				m.historyCursor = len(m.history) - 1
+				if m.historyCursor < 0 {
+					m.historyCursor = 0
+				}
+			}
+		}
 		return m, nil
 
 	case progressMsg:
@@ -52,6 +68,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.msgChan = nil
 		m.confirmOpen = false
 		m.pendingPlan = nil
+		m.pendingForce = false
 		if msg.err != nil {
 			m.errorMessage = fmt.Sprintf("Execution error: %v", msg.err)
 			m.infoMessage = ""
@@ -59,7 +76,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.infoMessage = fmt.Sprintf("Operation %s completed (%d ok, %d failed)", msg.report.Op, msg.report.OK, msg.report.Failed)
 			m.errorMessage = ""
 		}
-		return m, m.fetchStatusCmd()
+		return m, tea.Batch(m.fetchStatusCmd(), m.fetchHistoryCmd())
 
 	case tea.KeyMsg:
 		if m.executing {
@@ -73,10 +90,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "y", "Y", "enter":
 				m.confirmOpen = false
-				return m, m.startExecution(m.pendingAction)
+				return m, m.startExecution(m.pendingAction, false)
+			case "f", "F":
+				if m.pendingPlan == nil || len(m.pendingPlan.Conflicts) == 0 {
+					return m, nil
+				}
+				m.confirmOpen = false
+				m.pendingForce = true
+				return m, m.startExecution(m.pendingAction, true)
 			case "n", "N", "esc", "q":
 				m.confirmOpen = false
 				m.pendingPlan = nil
+				m.pendingForce = false
 				return m, nil
 			}
 			return m, nil
@@ -87,6 +112,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "ctrl+t", "t", " ":
+			if m.view == viewHistory {
+				return m, nil
+			}
 			action, ok := m.nextAction()
 			if !ok {
 				m.errorMessage = "Status not loaded yet"
@@ -97,20 +125,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.fetchPlanCmd(action)
 
 		case "r", "u":
+			if m.view == viewHistory {
+				return m, tea.Batch(m.fetchStatusCmd(), m.fetchHistoryCmd())
+			}
 			return m, m.fetchStatusCmd()
 
+		case "h":
+			if m.view == viewHistory {
+				return m, nil
+			}
+			m.historyReturn = m.view
+			m.view = viewHistory
+			m.historyCursor = 0
+			m.errorMessage = ""
+			return m, m.fetchHistoryCmd()
+
 		case "up", "k":
-			if m.view == viewDetail {
+			switch m.view {
+			case viewHistory:
+				if m.historyCursor > 0 {
+					m.historyCursor--
+				}
+			case viewDetail:
 				if m.detailCursor > 0 {
 					m.detailCursor--
 				}
-			} else if m.cursor > 0 {
-				m.cursor--
+			default:
+				if m.cursor > 0 {
+					m.cursor--
+				}
 			}
 			return m, nil
 
 		case "down", "j":
-			if m.view == viewDetail {
+			switch m.view {
+			case viewHistory:
+				if m.historyCursor < len(m.history)-1 {
+					m.historyCursor++
+				}
+			case viewDetail:
 				max := 0
 				if m.status != nil {
 					max = len(m.status.Resources) - 1
@@ -118,8 +171,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.detailCursor < max {
 					m.detailCursor++
 				}
-			} else if m.cursor < len(switchDefs)-1 {
-				m.cursor++
+			default:
+				if m.cursor < len(switchDefs)-1 {
+					m.cursor++
+				}
 			}
 			return m, nil
 
@@ -131,7 +186,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "esc":
-			if m.view == viewDetail {
+			switch m.view {
+			case viewHistory:
+				m.view = m.historyReturn
+			case viewDetail:
 				m.view = viewList
 			}
 			return m, nil

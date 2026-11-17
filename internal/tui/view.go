@@ -31,6 +31,8 @@ func (m Model) View() string {
 		body = m.renderProgress(bodyHeight)
 	case m.view == viewDetail:
 		body = m.renderDetail(bodyHeight)
+	case m.view == viewHistory:
+		body = m.renderHistory(bodyHeight)
 	default:
 		body = m.renderList(bodyHeight)
 	}

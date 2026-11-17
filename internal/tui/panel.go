@@ -87,8 +87,12 @@ func (m Model) panelStatus() (string, lipgloss.Style) {
 }
 
 func (m Model) footerText() string {
-	if m.view == viewDetail {
-		return "[↑/↓] scroll   [esc] back   [ctrl+t] toggle   [r] refresh   [q] quit"
+	switch m.view {
+	case viewHistory:
+		return "[↑/↓] scroll   [esc] back   [r] refresh   [q] quit"
+	case viewDetail:
+		return "[↑/↓] scroll   [esc] back   [ctrl+t] toggle   [h] history   [r] refresh   [q] quit"
+	default:
+		return "[↑/↓] select   [enter] inspect   [ctrl+t] toggle   [h] history   [r] refresh   [q] quit"
 	}
-	return "[↑/↓] select   [enter] inspect   [ctrl+t] toggle   [r] refresh   [q] quit"
 }

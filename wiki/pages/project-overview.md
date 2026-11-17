@@ -54,7 +54,7 @@ kill-switch/
 6. **Phase 6 — Workflow orchestration** (high, needs Phases 3–5)
 7. **Phase 7 — Polish and distribution** (high, ongoing)
 
-Phase 1 is the current scope. Keep it small; avoid abstractions for future switches until needed.
+Phase 1 and the Phase 2 gap closure are implemented; see [T2](tickets/t2-phase2-safety-recovery.md). Keep new switches small; avoid abstractions until needed.
 
 ## Key concepts
 

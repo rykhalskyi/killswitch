@@ -14,6 +14,7 @@ type viewMode int
 const (
 	viewList viewMode = iota
 	viewDetail
+	viewHistory
 )
 
 // switchDef describes one top-level switch in the main table.
@@ -46,6 +47,11 @@ type execDoneMsg struct {
 	err    error
 }
 
+type historyMsg struct {
+	items []engine.HistoryItem
+	err   error
+}
+
 type progressMsg struct {
 	step   int
 	total  int
@@ -63,13 +69,19 @@ type Model struct {
 	height int
 
 	// navigation
-	view         viewMode
-	cursor       int
-	detailCursor int
+	view          viewMode
+	historyReturn viewMode
+	cursor        int
+	detailCursor  int
+	historyCursor int
+
+	// history
+	history []engine.HistoryItem
 
 	// confirmation / execution
 	pendingPlan   *engine.Plan
 	pendingAction engine.Action
+	pendingForce  bool
 	confirmOpen   bool
 	executing     bool
 	execProgress  string
@@ -105,6 +117,13 @@ func (m Model) fetchPlanCmd(action engine.Action) tea.Cmd {
 	}
 }
 
+func (m Model) fetchHistoryCmd() tea.Cmd {
+	return func() tea.Msg {
+		items, err := m.eng.History(50)
+		return historyMsg{items: items, err: err}
+	}
+}
+
 func waitForProgress(ch <-chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
 		if ch == nil {
@@ -118,7 +137,7 @@ func waitForProgress(ch <-chan tea.Msg) tea.Cmd {
 	}
 }
 
-func (m *Model) startExecution(action engine.Action) tea.Cmd {
+func (m *Model) startExecution(action engine.Action, force bool) tea.Cmd {
 	ch := make(chan tea.Msg, 64)
 	m.executing = true
 	m.msgChan = ch
@@ -127,7 +146,7 @@ func (m *Model) startExecution(action engine.Action) tea.Cmd {
 	go func() {
 		defer close(ch)
 		ctx := context.Background()
-		report, err := m.eng.Execute(ctx, action, false, func(step int, total int, res config.Resource, status string, execErr error) {
+		report, err := m.eng.Execute(ctx, action, force, func(step int, total int, res config.Resource, status string, execErr error) {
 			ch <- progressMsg{step: step, total: total, res: res, status: status, err: execErr}
 		})
 		ch <- execDoneMsg{report: report, err: err}
