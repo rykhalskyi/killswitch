@@ -185,6 +185,8 @@ Launches the full interactive terminal UI powered by Bubble Tea:
 
 The main screen is a k9s-style table of switches. The Flux reconciliation switch is always listed first.
 
+Each panel title is a breadcrumb of your current location, e.g. `Flux Controls › Flux Reconciliation › Properties`, so you always know which level of the UI you are in.
+
 The `SWITCH` column is the control position: `● ON` when reconciliation is active and `○ OFF` only when every reachable target is fully suspended. The `CLUSTER` column shows the observed aggregate (`RESTORED`, `SUSPENDED`, `MIXED`, `DRIFT`, `MISSING`) so an inconsistent cluster never masquerades as a switch position.
 
 **Keybindings:**

@@ -145,6 +145,8 @@ Launch the Bubble Tea interface:
 killswitch tui
 ```
 
+The panel title is a breadcrumb showing where you are, for example `Flux Controls › Flux Reconciliation › Properties` or `Flux Controls › Flux Reconciliation › Operation History`.
+
 Keybindings:
 - `↑` / `↓` (or `k` / `j`) — Select a switch, scroll properties, or scroll history
 - `Enter` — Open the selected switch's properties

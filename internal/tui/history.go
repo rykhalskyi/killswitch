@@ -54,7 +54,7 @@ func (m Model) renderHistory(bodyHeight int) string {
 	}
 	visible, start := windowRows(rows, m.historyCursor, maxRows)
 
-	title := "OPERATION HISTORY"
+	title := m.breadcrumb()
 	right := fmt.Sprintf("%d operations", len(m.history))
 	if len(m.history) > len(visible) {
 		title = fmt.Sprintf("%s  (%d-%d of %d)", title, start+1, start+len(visible), len(m.history))

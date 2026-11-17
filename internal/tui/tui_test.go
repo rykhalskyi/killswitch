@@ -161,14 +161,42 @@ func TestHistoryView(t *testing.T) {
 	m.history = sampleHistory(3)
 
 	view := m.View()
-	if !strings.Contains(view, "OPERATION HISTORY") {
-		t.Fatalf("expected history title, got:\n%s", view)
+	if !strings.Contains(view, "Operation History") {
+		t.Fatalf("expected history breadcrumb, got:\n%s", view)
 	}
 	if !strings.Contains(view, "SUCCESS") {
 		t.Fatalf("expected operation status in history, got:\n%s", view)
 	}
 	if !strings.Contains(view, "4.2s") {
 		t.Fatalf("expected formatted duration in history, got:\n%s", view)
+	}
+}
+
+func TestBreadcrumb(t *testing.T) {
+	m := NewModel(nil)
+	m.width, m.height = 120, 40
+
+	if got := m.breadcrumb(); got != "Flux Controls" {
+		t.Fatalf("list breadcrumb = %q", got)
+	}
+
+	m.view = viewDetail
+	if got := m.breadcrumb(); got != "Flux Controls › Flux Reconciliation › Properties" {
+		t.Fatalf("detail breadcrumb = %q", got)
+	}
+	if view := m.View(); !strings.Contains(view, "Flux Controls › Flux Reconciliation › Properties") {
+		t.Fatalf("detail view missing breadcrumb:\n%s", view)
+	}
+
+	m.view = viewHistory
+	m.historyReturn = viewList
+	if got := m.breadcrumb(); got != "Flux Controls › Operation History" {
+		t.Fatalf("history breadcrumb = %q", got)
+	}
+
+	m.historyReturn = viewDetail
+	if got := m.breadcrumb(); got != "Flux Controls › Flux Reconciliation › Operation History" {
+		t.Fatalf("history-from-detail breadcrumb = %q", got)
 	}
 }
 

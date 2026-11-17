@@ -7,3 +7,4 @@
 ## [2026-11-17] update | project-overview.md — Phase 1 implemented, Phase 2 tracked in T2
 ## [2026-11-17] update | t2-phase2-safety-recovery.md — status changed to implemented
 ## [2026-11-17] update | manual.md — Phase 2 TUI history, recovery, and conflict behavior documented
+## [2026-11-17] update | manual.md — TUI breadcrumb documented

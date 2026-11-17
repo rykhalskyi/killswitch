@@ -43,7 +43,7 @@ func (m Model) renderList(bodyHeight int) string {
 	}
 	visible, _ := windowRows(rows, m.cursor, maxRows)
 
-	title := "FLUX CONTROLS"
+	title := m.breadcrumb()
 	right := "connecting…"
 	if m.status != nil {
 		ctx := m.status.Context
