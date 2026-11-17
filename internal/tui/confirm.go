@@ -54,8 +54,13 @@ func (m Model) renderConfirm(bodyHeight int) string {
 		"",
 	}
 
-	// Reserve a line for a possible overflow/warning notice, plus a blank line and the footer.
-	available := maxLines - len(lines) - 3
+	// Reserve lines for the overflow notice, any conflict warnings, a blank
+	// line, and the footer.
+	noticeLines := 1
+	if len(plan.Conflicts) > 0 {
+		noticeLines += 2
+	}
+	available := maxLines - len(lines) - 2 - noticeLines
 	if available < 1 {
 		available = 1
 	}
@@ -79,7 +84,8 @@ func (m Model) renderConfirm(bodyHeight int) string {
 
 	if len(plan.Items) > show {
 		lines = append(lines, cell(fmt.Sprintf("… and %d more", len(plan.Items)-show), contentW))
-	} else if len(plan.Conflicts) > 0 {
+	}
+	if len(plan.Conflicts) > 0 {
 		reason := plan.Conflicts[0].ConflictReason
 		if reason == "" {
 			reason = "conflicts detected — execution may fail"

@@ -379,6 +379,9 @@ func TestEngineResumeInterruptedSuspendOnlyTouchesActiveResources(t *testing.T) 
 	if report.OK != 1 || report.Failed != 0 {
 		t.Fatalf("expected 1 OK, got OK=%d Failed=%d", report.OK, report.Failed)
 	}
+	if report.GlobalStatus != GlobalStatusPartial {
+		t.Errorf("narrowed resume must not report a clean global state, got %s", report.GlobalStatus)
+	}
 	if !client.resources["Kustomization/flux-system/apps"].Suspended {
 		t.Error("touched resource was not resumed")
 	}
@@ -469,6 +472,41 @@ func TestEngineRestoreInterruptedSuspendOnlyUndoTouchedResources(t *testing.T) {
 	}
 	if finalStatus.GlobalStatus != GlobalStatusRestored {
 		t.Errorf("expected restored after undo, got %s", finalStatus.GlobalStatus)
+	}
+}
+
+func TestEngineResumeFlagsDriftOnVerifiedResource(t *testing.T) {
+	cfg := createTestConfig()
+	client := newMockFluxClient()
+	populateActiveResources(client)
+
+	stateDir := t.TempDir()
+	seedJournal(t, stateDir, []journal.Event{
+		{Op: "01DRIFT", Event: journal.EventOpStart, Action: string(ActionSuspend), Context: "talos", Targets: 2},
+		{Op: "01DRIFT", Event: journal.EventResourceIntent, Action: string(ActionSuspend), Kind: "Kustomization", Namespace: "flux-system", Name: "apps", From: boolPtr(false), To: boolPtr(true)},
+		{Op: "01DRIFT", Event: journal.EventResourceResult, Kind: "Kustomization", Namespace: "flux-system", Name: "apps", Status: journal.StatusOk, Observed: boolPtr(true)},
+		{Op: "01DRIFT", Event: journal.EventResourceIntent, Action: string(ActionSuspend), Kind: "HelmRelease", Namespace: "traefik", Name: "traefik", From: boolPtr(false), To: boolPtr(true)},
+	})
+	// apps was verified suspended but was un-suspended out-of-band afterwards.
+	client.resources["Kustomization/flux-system/apps"].Suspended = false
+
+	eng := New(cfg, client, stateDir, "talos", nil)
+	ctx := context.Background()
+	if err := eng.Init(ctx); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer eng.Close()
+
+	plan, err := eng.BuildPlan(ctx, ActionSuspend)
+	if err != nil {
+		t.Fatalf("BuildPlan failed: %v", err)
+	}
+	if len(plan.Conflicts) != 1 || plan.Conflicts[0].Resource.Name != "apps" {
+		t.Fatalf("expected drift on verified resource to surface as a conflict, got %+v", plan.Conflicts)
+	}
+
+	if _, err := eng.Execute(ctx, ActionSuspend, false, nil); err != ErrConflict {
+		t.Fatalf("expected ErrConflict on drifted verified resource, got %v", err)
 	}
 }
 

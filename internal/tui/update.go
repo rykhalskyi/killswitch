@@ -112,6 +112,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "ctrl+t", "t", " ":
+			if m.view == viewHistory {
+				return m, nil
+			}
 			action, ok := m.nextAction()
 			if !ok {
 				m.errorMessage = "Status not loaded yet"

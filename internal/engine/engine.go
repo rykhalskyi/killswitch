@@ -166,9 +166,11 @@ func (e *Engine) BuildPlan(ctx context.Context, action Action) (*Plan, error) {
 	plan := &Plan{
 		Action: action,
 	}
+	planned := make(map[string]bool, len(ordered))
 
 	for _, res := range ordered {
 		key := res.Key()
+		planned[key] = true
 		info, err := e.fluxClient.GetResource(ctx, res.Kind, res.Namespace, res.Name)
 		item := PlanItem{
 			Resource: res,
@@ -216,6 +218,12 @@ func (e *Engine) BuildPlan(ctx context.Context, action Action) (*Plan, error) {
 		item.WillChange = item.CurrentSuspended != item.TargetSuspended
 		plan.Items = append(plan.Items, item)
 	}
+
+	drift, err := e.recoveryDriftConflicts(ctx, planned)
+	if err != nil {
+		return nil, err
+	}
+	plan.Conflicts = append(plan.Conflicts, drift...)
 
 	return plan, nil
 }
@@ -321,6 +329,10 @@ type ProgressFunc func(step int, total int, res config.Resource, status string, 
 
 // Execute runs the full suspend or restore workflow with journaling, verification, and crash safety.
 func (e *Engine) Execute(ctx context.Context, action Action, force bool, onProgress ProgressFunc) (*ExecutionReport, error) {
+	// A narrowed recovery only touches a subset of configured resources, so its
+	// own success is not enough to claim a clean global state.
+	recovering := e.state.ActiveOp != nil
+
 	// Build plan
 	plan, err := e.BuildPlan(ctx, action)
 	if err != nil {
@@ -541,6 +553,14 @@ func (e *Engine) Execute(ctx context.Context, action Action, force bool, onProgr
 	e.state.ApplyEvent(endEvent)
 	if err := e.state.Save(); err != nil {
 		return nil, fmt.Errorf("saving state: %w", err)
+	}
+
+	if recovering {
+		if st, statusErr := e.Status(ctx); statusErr == nil {
+			report.GlobalStatus = st.GlobalStatus
+		} else {
+			report.GlobalStatus = GlobalStatusPartial
+		}
 	}
 
 	if opEndStatus != journal.StatusSuccess {

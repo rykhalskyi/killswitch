@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,9 +15,12 @@ import (
 	"github.com/rykhalskyi/killswitch/internal/config"
 	"github.com/rykhalskyi/killswitch/internal/engine"
 	"github.com/rykhalskyi/killswitch/internal/flux"
+	"github.com/rykhalskyi/killswitch/internal/journal"
 )
 
-type tuiFluxClient struct{}
+type tuiFluxClient struct {
+	observed map[string]bool
+}
 
 func (tuiFluxClient) DiscoverGVRs(context.Context) error { return nil }
 
@@ -24,8 +28,9 @@ func (tuiFluxClient) GetGVR(string) (schema.GroupVersionResource, error) {
 	return schema.GroupVersionResource{}, nil
 }
 
-func (tuiFluxClient) GetResource(_ context.Context, kind, namespace, name string) (*flux.ResourceInfo, error) {
-	return &flux.ResourceInfo{Kind: kind, Namespace: namespace, Name: name, Ready: "True"}, nil
+func (c tuiFluxClient) GetResource(_ context.Context, kind, namespace, name string) (*flux.ResourceInfo, error) {
+	suspended := c.observed[kind+"/"+namespace+"/"+name]
+	return &flux.ResourceInfo{Kind: kind, Namespace: namespace, Name: name, Suspended: suspended, Ready: "True"}, nil
 }
 
 func (tuiFluxClient) PatchSuspend(_ context.Context, kind, namespace, name string, suspend bool) (*flux.ResourceInfo, error) {
@@ -172,10 +177,17 @@ func TestHistoryNavigation(t *testing.T) {
 	m.width, m.height = 100, 24
 	m.view = viewDetail
 
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
 	m = next.(Model)
 	if m.view != viewHistory || m.historyReturn != viewDetail {
 		t.Fatalf("h should open history from detail, got view=%v return=%v", m.view, m.historyReturn)
+	}
+
+	m.status = sampleStatus(4)
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = next.(Model)
+	if cmd != nil || m.confirmOpen || m.view != viewHistory {
+		t.Fatalf("toggle must not run from history, got cmd=%v confirm=%v view=%v", cmd != nil, m.confirmOpen, m.view)
 	}
 
 	m.history = sampleHistory(3)
@@ -196,14 +208,46 @@ func TestTUIForceOverride(t *testing.T) {
 	cfg := &config.Config{Flux: config.FluxConfig{
 		Resources: []config.Resource{{Kind: config.KindKustomization, Namespace: "flux-system", Name: "apps"}},
 	}}
-	eng := engine.New(cfg, tuiFluxClient{}, t.TempDir(), "test", nil)
-	if err := eng.Init(context.Background()); err != nil {
+
+	stateDir := t.TempDir()
+	j, err := journal.Open(filepath.Join(stateDir, "journal.jsonl"))
+	if err != nil {
+		t.Fatalf("opening seed journal: %v", err)
+	}
+	from, to := false, true
+	events := []journal.Event{
+		{Op: "01SEED", Event: journal.EventOpStart, Action: journal.ActionSuspend, Context: "test", Targets: 1},
+		{Op: "01SEED", Event: journal.EventResourceIntent, Action: journal.ActionSuspend, Kind: config.KindKustomization, Namespace: "flux-system", Name: "apps", From: &from, To: &to},
+		{Op: "01SEED", Event: journal.EventResourceResult, Kind: config.KindKustomization, Namespace: "flux-system", Name: "apps", Status: journal.StatusOk, Observed: &to},
+		{Op: "01SEED", Event: journal.EventOpEnd, Status: journal.StatusSuccess, OK: 1},
+		{Op: "01RESTORE", Event: journal.EventOpStart, Action: journal.ActionRestore, Context: "test", Targets: 1},
+		{Op: "01RESTORE", Event: journal.EventOpEnd, Status: journal.StatusSuccess, OK: 1},
+	}
+	for i := range events {
+		if err := j.Append(&events[i]); err != nil {
+			_ = j.Close()
+			t.Fatalf("appending seed event: %v", err)
+		}
+	}
+	if err := j.Close(); err != nil {
+		t.Fatalf("closing seed journal: %v", err)
+	}
+
+	// External suspend after a clean restore: expected false, observed true.
+	client := tuiFluxClient{observed: map[string]bool{"Kustomization/flux-system/apps": true}}
+	eng := engine.New(cfg, client, stateDir, "test", nil)
+	ctx := context.Background()
+	if err := eng.Init(ctx); err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
 	defer eng.Close()
 
+	if _, err := eng.Execute(ctx, engine.ActionSuspend, false, nil); err != engine.ErrConflict {
+		t.Fatalf("expected a real conflict without force, got %v", err)
+	}
+
 	m := NewModel(eng)
-	m.pendingPlan = samplePlan(2)
+	m.pendingPlan = samplePlan(1)
 	m.pendingPlan.Conflicts = []engine.PlanItem{m.pendingPlan.Items[0]}
 	m.pendingAction = engine.ActionSuspend
 	m.confirmOpen = true
@@ -222,6 +266,9 @@ func TestTUIForceOverride(t *testing.T) {
 				report, err := eng.History(1)
 				if err != nil || len(report) == 0 || report[0].Status != "success" {
 					t.Fatalf("forced execution was not journaled: %v %+v", err, report)
+				}
+				if report[0].Action != string(engine.ActionSuspend) {
+					t.Fatalf("forced execution journaled wrong action: %s", report[0].Action)
 				}
 				return
 			}

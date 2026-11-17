@@ -48,7 +48,7 @@ Acceptance criteria:
 Shipped.
 
 - TUI history view: `h` opens `Engine.History(50)`; `↑`/`↓` scroll, `Esc` returns to the previous view, `r`/`u` refresh, and history is refreshed after every operation. The TUI never reads `journal.jsonl` directly.
-- Precise recovery: `planResources` scopes an interrupted operation to `ActiveOp.ResourceStates`. Suspend resumes only targets not already verified; restore undoes only resources with a recorded intent. Resources outside the interrupted operation are untouched.
+- Precise recovery: `planResources` scopes an interrupted operation to `ActiveOp.ResourceStates`. Suspend resumes only targets not already verified; restore undoes only resources with a recorded intent. Resources outside the interrupted operation are untouched. Verified-but-drifted resources are surfaced as conflicts instead of silently skipped, and a narrowed recovery recomputes the reported global state instead of claiming a clean cluster.
 - `Status` no longer reports `restored` unless the last completed operation was a successful restore and every resource matches its recorded original.
 - Conflict detection now compares per-resource expected vs observed state in both directions (external un-suspend after freeze and external suspend after restore). Journaled conflict events carry the real `expected`, `observed`, and reason.
 - TUI confirmation shows conflict reasons and supports `f` for a forced execution; CLI keeps exit code 3/`--force` semantics.

@@ -1,6 +1,11 @@
 package engine
 
 import (
+	"context"
+	"fmt"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
 	"github.com/rykhalskyi/killswitch/internal/config"
 	"github.com/rykhalskyi/killswitch/internal/journal"
 	"github.com/rykhalskyi/killswitch/internal/state"
@@ -43,6 +48,9 @@ func (e *Engine) expectedSuspended(key string) (*bool, bool) {
 	}
 
 	last := e.state.LastCompletedOp
+	// Only a fully successful operation establishes a trustworthy baseline.
+	// After a partial or failed run some targets were intentionally left in a
+	// different state, so comparing against them would produce false conflicts.
 	if last == nil || last.Status != journal.StatusSuccess {
 		return nil, false
 	}
@@ -55,4 +63,59 @@ func (e *Engine) expectedSuspended(key string) (*bool, bool) {
 		expected = true
 	}
 	return &expected, true
+}
+
+// recoveryDriftConflicts reports completed resources from an interrupted
+// operation that are excluded from the execution subset (for example, targets
+// already verified before a resume). Without this check, drift on those
+// resources would go unnoticed and the resume would journal a clean completion.
+func (e *Engine) recoveryDriftConflicts(ctx context.Context, planned map[string]bool) ([]PlanItem, error) {
+	if e.state.ActiveOp == nil {
+		return nil, nil
+	}
+
+	byKey := make(map[string]config.Resource, len(e.cfg.Flux.Resources))
+	for _, res := range e.cfg.Flux.Resources {
+		byKey[res.Key()] = res
+	}
+
+	var conflicts []PlanItem
+	for key, rs := range e.state.ActiveOp.ResourceStates {
+		if planned[key] || rs.Phase != state.PhaseOK {
+			continue
+		}
+		res, ok := byKey[key]
+		if !ok {
+			continue
+		}
+
+		info, err := e.fluxClient.GetResource(ctx, res.Kind, res.Namespace, res.Name)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return nil, fmt.Errorf("getting resource %s during recovery: %w", key, err)
+		}
+		if info.Suspended == rs.Target {
+			continue
+		}
+
+		expected := rs.Target
+		conflicts = append(conflicts, PlanItem{
+			Resource:          res,
+			Info:              info,
+			CurrentSuspended:  info.Suspended,
+			TargetSuspended:   rs.Target,
+			Original:          info.Suspended,
+			Exists:            true,
+			ExpectedSuspended: &expected,
+			Conflict:          true,
+			ConflictReason: fmt.Sprintf(
+				"resource was modified outside killswitch: expected spec.suspend=%t, observed %t",
+				expected, info.Suspended,
+			),
+		})
+	}
+
+	return conflicts, nil
 }
