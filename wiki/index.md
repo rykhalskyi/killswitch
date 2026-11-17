@@ -7,6 +7,10 @@
 - [build-deploy](pages/build-deploy.md) — Build, test, lint, and run commands for the Kill Switch Go CLI and TUI.
 - [manual](pages/manual.md) — Comprehensive user manual and CLI/TUI operational guide for Kill Switch.
 
+## Specs
+- [specs/extension-architecture](pages/specs/extension-architecture.md) — Extension architecture for Phases 3–6 — switches, workflows, and state-aware Go action handlers, with gap resolutions and tradeoffs.
+
 ## Tickets
 - [tickets/t1-phase1-flux-toggle](pages/tickets/t1-phase1-flux-toggle.md) — Phase 1 plan for a Go CLI/TUI that suspends and restores all configured Flux Kustomizations and HelmReleases with JSON journaling and crash recovery.
 - [tickets/t2-phase2-safety-recovery](pages/tickets/t2-phase2-safety-recovery.md) — Phase 2 gap closure — TUI history, precise interrupted-run recovery, and per-resource conflict detection on top of the Phase 1 engine.
+- [tickets/t3-phase3-workload-controls](pages/tickets/t3-phase3-workload-controls.md) — Phase 3 — adopt layered switch/workflow config and action handlers, then implement Kubernetes workload scaling.

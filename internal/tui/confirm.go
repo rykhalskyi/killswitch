@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/rykhalskyi/killswitch/internal/engine"
 )
 
@@ -36,8 +35,7 @@ func (m Model) renderConfirm(bodyHeight int) string {
 	}
 	maxLines := bodyHeight - 4
 	if maxLines < 1 {
-		msg := truncateText("Confirm switch change? [y] yes / [n] no", m.width)
-		return lipgloss.Place(m.width, bodyHeight, lipgloss.Center, lipgloss.Center, msg)
+		return truncateText("Confirm switch change? [y] yes / [n] no", m.width)
 	}
 
 	sw := switchDefs[m.cursor]
@@ -104,5 +102,5 @@ func (m Model) renderConfirm(bodyHeight int) string {
 		lines[maxLines-1] = cell(footer, contentW)
 	}
 
-	return lipgloss.Place(m.width, bodyHeight, lipgloss.Center, lipgloss.Center, modalBox.Render(strings.Join(lines, "\n")))
+	return modalBox.Render(strings.Join(lines, "\n"))
 }

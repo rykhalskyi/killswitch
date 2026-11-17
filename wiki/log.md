@@ -7,3 +7,12 @@
 ## [2026-11-17] update | project-overview.md — Phase 1 implemented, Phase 2 tracked in T2
 ## [2026-11-17] update | t2-phase2-safety-recovery.md — status changed to implemented
 ## [2026-11-17] update | manual.md — Phase 2 TUI history, recovery, and conflict behavior documented
+## [2026-11-17] update | manual.md — TUI breadcrumb documented
+## [2026-11-17] spec | extension-architecture
+## [2026-11-17] ticket | T3 — Phase 3: Kubernetes workload controls
+## [2026-11-17] update | project-overview.md — tech stack, structure, status, and extension concepts refreshed
+## [2026-11-17] update | manual.md — confirm overlay documented
+## [2026-11-17] update | specs/extension-architecture.md — gap decisions D-12…D-16 recorded
+## [2026-11-17] update | tickets/t3-phase3-workload-controls.md — scope aligned with gap decisions
+## [2026-11-17] update | specs/extension-architecture.md — two-way dependency interlock documented (D-17)
+## [2026-11-17] update | tickets/t3-phase3-workload-controls.md — forward and reverse cascade added to scope

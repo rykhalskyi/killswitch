@@ -25,16 +25,19 @@ func (m Model) View() string {
 
 	var body string
 	switch {
-	case m.confirmOpen && m.pendingPlan != nil:
-		body = m.renderConfirm(bodyHeight)
-	case m.executing:
-		body = m.renderProgress(bodyHeight)
 	case m.view == viewDetail:
 		body = m.renderDetail(bodyHeight)
 	case m.view == viewHistory:
 		body = m.renderHistory(bodyHeight)
 	default:
 		body = m.renderList(bodyHeight)
+	}
+
+	switch {
+	case m.confirmOpen && m.pendingPlan != nil:
+		body = overlayCenter(body, m.renderConfirm(bodyHeight), m.width, bodyHeight)
+	case m.executing:
+		body = m.renderProgress(bodyHeight)
 	}
 
 	return header + "\n" + body

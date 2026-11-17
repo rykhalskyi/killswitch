@@ -8,7 +8,6 @@ import (
 )
 
 func (m Model) renderDetail(bodyHeight int) string {
-	sw := switchDefs[m.cursor]
 	var resources []engine.ResourceStatusItem
 	if m.status != nil {
 		resources = m.status.Resources
@@ -46,13 +45,13 @@ func (m Model) renderDetail(bodyHeight int) string {
 	visible, start := windowRows(rows, m.detailCursor, maxRows)
 
 	clusterLabel, _ := m.clusterState()
-	title := sw.name + " — properties"
+	title := m.breadcrumb()
 	right := fmt.Sprintf("%d items", len(resources))
 	if m.status != nil {
 		right = clusterLabel + " · " + right
 	}
 	if len(resources) > len(visible) {
-		title = fmt.Sprintf("%s  (%d-%d of %d)", sw.name, start+1, start+len(visible), len(resources))
+		title = fmt.Sprintf("%s  (%d-%d of %d)", title, start+1, start+len(visible), len(resources))
 	}
 
 	return m.renderPanel(title, right, colHeader, visible, bodyHeight)
