@@ -18,16 +18,19 @@ const (
 )
 
 // switchDef describes one top-level switch in the main table.
-// Phase 1 only ships the Flux reconciliation switch; more can be appended later.
 type switchDef struct {
+	id          string
 	name        string
 	description string
+	workflow    string
 }
 
-var switchDefs = []switchDef{
+var defaultSwitchDefs = []switchDef{
 	{
+		id:          "flux",
 		name:        "Flux Reconciliation",
 		description: "Suspend / restore all configured Flux Kustomizations and HelmReleases",
+		workflow:    "flux",
 	},
 }
 
@@ -37,9 +40,11 @@ type statusMsg struct {
 }
 
 type planMsg struct {
-	action engine.Action
-	plan   *engine.Plan
-	err    error
+	action    engine.Action
+	switchID  string
+	direction engine.Direction
+	plan      *engine.Plan
+	err       error
 }
 
 type execDoneMsg struct {
@@ -61,8 +66,9 @@ type progressMsg struct {
 }
 
 type Model struct {
-	eng    *engine.Engine
-	status *engine.StatusReport
+	eng      *engine.Engine
+	status   *engine.StatusReport
+	switches []switchDef
 
 	// layout
 	width  int
@@ -81,6 +87,8 @@ type Model struct {
 	// confirmation / execution
 	pendingPlan   *engine.Plan
 	pendingAction engine.Action
+	pendingSwitch string
+	pendingDir    engine.Direction
 	pendingForce  bool
 	confirmOpen   bool
 	executing     bool
@@ -92,9 +100,42 @@ type Model struct {
 }
 
 func NewModel(eng *engine.Engine) Model {
-	return Model{
-		eng: eng,
+	m := Model{eng: eng}
+	if eng != nil {
+		for _, sw := range eng.Switches() {
+			m.switches = append(m.switches, switchDef{
+				id:          sw.ID,
+				name:        sw.Name,
+				description: sw.Description,
+				workflow:    sw.Workflow,
+			})
+		}
 	}
+	return m
+}
+
+// switchDefs returns configured switches, falling back to the Flux default.
+func (m Model) switchDefs() []switchDef {
+	if len(m.switches) > 0 {
+		return m.switches
+	}
+	return defaultSwitchDefs
+}
+
+// selectedSwitch returns the switch at the cursor.
+func (m Model) selectedSwitch() switchDef {
+	defs := m.switchDefs()
+	if len(defs) == 0 {
+		return switchDef{}
+	}
+	idx := m.cursor
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(defs) {
+		idx = len(defs) - 1
+	}
+	return defs[idx]
 }
 
 func (m Model) Init() tea.Cmd {
@@ -109,11 +150,11 @@ func (m Model) fetchStatusCmd() tea.Cmd {
 	}
 }
 
-func (m Model) fetchPlanCmd(action engine.Action) tea.Cmd {
+func (m Model) fetchPlanCmd(switchID string, dir engine.Direction, action engine.Action) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		plan, err := m.eng.BuildPlan(ctx, action)
-		return planMsg{action: action, plan: plan, err: err}
+		plan, err := m.eng.BuildSwitchPlan(ctx, switchID, dir)
+		return planMsg{action: action, switchID: switchID, direction: dir, plan: plan, err: err}
 	}
 }
 
@@ -137,16 +178,16 @@ func waitForProgress(ch <-chan tea.Msg) tea.Cmd {
 	}
 }
 
-func (m *Model) startExecution(action engine.Action, force bool) tea.Cmd {
+func (m *Model) startExecution(switchID string, dir engine.Direction, force bool) tea.Cmd {
 	ch := make(chan tea.Msg, 64)
 	m.executing = true
 	m.msgChan = ch
-	m.execProgress = fmt.Sprintf("Starting %s...", action)
+	m.execProgress = fmt.Sprintf("Starting %s %s...", switchID, dir)
 
 	go func() {
 		defer close(ch)
 		ctx := context.Background()
-		report, err := m.eng.Execute(ctx, action, force, func(step int, total int, res config.Resource, status string, execErr error) {
+		report, err := m.eng.ExecuteSwitch(ctx, switchID, dir, force, func(step int, total int, res config.Resource, status string, execErr error) {
 			ch <- progressMsg{step: step, total: total, res: res, status: status, err: execErr}
 		})
 		ch <- execDoneMsg{report: report, err: err}

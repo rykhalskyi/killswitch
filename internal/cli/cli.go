@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rykhalskyi/killswitch/internal/actions"
 	"github.com/rykhalskyi/killswitch/internal/config"
 	"github.com/rykhalskyi/killswitch/internal/engine"
 	"github.com/rykhalskyi/killswitch/internal/flux"
@@ -38,10 +39,16 @@ func Main(args []string) int {
 	switch cmd {
 	case "status":
 		return handleStatus(cmdArgs)
+	case "on":
+		return handleSwitch(cmdArgs, engine.DirectionOn)
+	case "off":
+		return handleSwitch(cmdArgs, engine.DirectionOff)
 	case "suspend":
 		return handleSuspend(cmdArgs)
 	case "restore":
 		return handleRestore(cmdArgs)
+	case "validate":
+		return handleValidate(cmdArgs)
 	case "history":
 		return handleHistory(cmdArgs)
 	case "tui":
@@ -61,13 +68,16 @@ func Main(args []string) int {
 
 func parseCommand(args []string) (string, []string) {
 	known := map[string]bool{
-		"status":  true,
-		"suspend": true,
-		"restore": true,
-		"history": true,
-		"tui":     true,
-		"version": true,
-		"help":    true,
+		"status":   true,
+		"on":       true,
+		"off":      true,
+		"suspend":  true,
+		"restore":  true,
+		"history":  true,
+		"validate": true,
+		"tui":      true,
+		"version":  true,
+		"help":     true,
 	}
 
 	cmdIdx := -1
@@ -107,21 +117,25 @@ func parseCommand(args []string) (string, []string) {
 }
 
 func printUsage() {
-	fmt.Printf(`killswitch %s — Reversible Flux reconciliation freeze controller
+	fmt.Printf(`killswitch %s — Reversible homelab switch controller
 
 Usage:
   killswitch <command> [flags]
+  killswitch <switch-id> on|off [flags]
 
 Commands:
-  status   Show current Flux reconciliation status on cluster
-  suspend  Freeze all configured Flux Kustomizations and HelmReleases
-  restore  Unfreeze and restore resources to their recorded states
-  history  Show journaled operation history
-  tui      Interactive terminal interface
-  version  Print the application version
+  status    Show switch and cluster status
+  on        Turn a switch ON (default operational state)
+  off       Turn a switch OFF (capture originals and apply non-default state)
+  suspend   Alias for "flux off"
+  restore   Alias for "flux on"
+  validate  Validate switches.yaml and workflows
+  history   Show journaled operation history
+  tui       Interactive terminal interface
+  version   Print the application version
 
 Global Flags:
-  --config <path>       Path to config YAML (default: config.yaml)
+  --config <path>       Path to switches.yaml or config directory
   --context <name>      Kubernetes context name
   --kubeconfig <path>   Path to kubeconfig file
   --timeout <duration>  Timeout for cluster operations (default: 60s)
@@ -130,12 +144,12 @@ Global Flags:
 
 Examples:
   killswitch status
-  killswitch suspend --dry-run
+  killswitch media off --dry-run
+  killswitch media on --yes
   killswitch suspend --yes
   killswitch restore --force
-  killswitch history --limit 5
+  killswitch history --switch media --limit 5
   killswitch tui
-  killswitch version
 `, version.Display())
 }
 
@@ -187,10 +201,13 @@ func findConfigFile(userPath string) (string, error) {
 	}
 
 	candidates := []string{
+		"switches.yaml",
+		"switches.yml",
 		"config.yaml",
 		"config.yml",
 		"config.example.yaml",
-		filepath.Join(os.Getenv("HOME"), ".config", "killswitch", "config.yaml"),
+		filepath.Join(os.Getenv("HOME"), ".config", "killswitch"),
+		filepath.Join(os.Getenv("HOME"), ".config", "killswitch", "switches.yaml"),
 	}
 
 	for _, cand := range candidates {
@@ -199,7 +216,7 @@ func findConfigFile(userPath string) (string, error) {
 		}
 	}
 
-	return "", errors.New("no config file found. Please provide --config <path> or create config.yaml")
+	return "", errors.New("no config found. Provide --config <path> or create switches.yaml with workflows/*.yaml")
 }
 
 func initEngine(cf *commonFlags, logger *slog.Logger) (*engine.Engine, context.CancelFunc, int) {
@@ -222,6 +239,7 @@ func initEngine(cf *commonFlags, logger *slog.Logger) (*engine.Engine, context.C
 	}
 
 	eng := engine.New(cfg, client, cf.stateDir, activeCtx, logger)
+	eng.SetScaleClient(actions.NewKubeClient(client.Dynamic()))
 	ctx, cancel := context.WithTimeout(context.Background(), cf.timeout)
 
 	if err := eng.Init(ctx); err != nil {
@@ -242,6 +260,7 @@ func handleStatus(args []string) int {
 	fs.SetOutput(io.Discard)
 	cf := registerCommonFlags(fs)
 	jsonFlag := fs.Bool("json", false, "Output in JSON format")
+	switchID := fs.String("switch", "", "Show only one switch")
 
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "Flag error: %v\n", err)
@@ -259,61 +278,29 @@ func handleStatus(args []string) int {
 	ctx, cancelTimeout := context.WithTimeout(context.Background(), cf.timeout)
 	defer cancelTimeout()
 
-	return runStatus(ctx, eng, *jsonFlag)
+	return runStatus(ctx, eng, *jsonFlag, *switchID)
 }
 
-func handleSuspend(args []string) int {
-	fs := flag.NewFlagSet("suspend", flag.ContinueOnError)
+func handleValidate(args []string) int {
+	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	cf := registerCommonFlags(fs)
-	dryRun := fs.Bool("dry-run", false, "Preview planned operations without executing")
-	yes := fs.Bool("yes", false, "Skip confirmation prompt")
-	force := fs.Bool("force", false, "Override conflict checks and proceed")
-
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "Flag error: %v\n", err)
 		return engine.ExitConfigOrConnection
 	}
-
-	logger := setupLogger(cf.logLevel)
-	eng, cancel, code := initEngine(cf, logger)
-	if code != engine.ExitSuccess {
-		return code
-	}
-	defer cancel()
-	defer eng.Close()
-
-	ctx, cancelTimeout := context.WithTimeout(context.Background(), cf.timeout)
-	defer cancelTimeout()
-
-	return runAction(ctx, eng, engine.ActionSuspend, *dryRun, *yes, *force)
-}
-
-func handleRestore(args []string) int {
-	fs := flag.NewFlagSet("restore", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	cf := registerCommonFlags(fs)
-	dryRun := fs.Bool("dry-run", false, "Preview planned operations without executing")
-	yes := fs.Bool("yes", false, "Skip confirmation prompt")
-	force := fs.Bool("force", false, "Override conflict checks and proceed")
-
-	if err := fs.Parse(args); err != nil {
-		fmt.Fprintf(os.Stderr, "Flag error: %v\n", err)
+	cfgPath, err := findConfigFile(cf.configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Config error: %v\n", err)
 		return engine.ExitConfigOrConnection
 	}
-
-	logger := setupLogger(cf.logLevel)
-	eng, cancel, code := initEngine(cf, logger)
-	if code != engine.ExitSuccess {
-		return code
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Config error: %v\n", err)
+		return engine.ExitConfigOrConnection
 	}
-	defer cancel()
-	defer eng.Close()
-
-	ctx, cancelTimeout := context.WithTimeout(context.Background(), cf.timeout)
-	defer cancelTimeout()
-
-	return runAction(ctx, eng, engine.ActionRestore, *dryRun, *yes, *force)
+	fmt.Printf("Configuration valid: %d switch(es), %d workflow(s) loaded from %s\n", len(cfg.Switches), len(cfg.Workflows), cfgPath)
+	return engine.ExitSuccess
 }
 
 func handleHistory(args []string) int {
@@ -322,6 +309,7 @@ func handleHistory(args []string) int {
 	cf := registerCommonFlags(fs)
 	limit := fs.Int("limit", 20, "Maximum number of history entries to show")
 	jsonFlag := fs.Bool("json", false, "Output in JSON format")
+	switchID := fs.String("switch", "", "Filter history by switch")
 
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "Flag error: %v\n", err)
@@ -336,7 +324,7 @@ func handleHistory(args []string) int {
 	defer cancel()
 	defer eng.Close()
 
-	return runHistory(eng, *limit, *jsonFlag)
+	return runHistory(eng, *limit, *jsonFlag, *switchID)
 }
 
 func handleTUI(args []string) int {

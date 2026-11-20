@@ -27,32 +27,56 @@ type ResourceState struct {
 	Error      string        `json:"error,omitempty"`
 }
 
+// StepState tracks the typed progress of a workflow step.
+type StepState struct {
+	Phase      ResourcePhase `json:"phase"`
+	Desired    any           `json:"desired,omitempty"`
+	Observed   any           `json:"observed,omitempty"`
+	Original   any           `json:"original,omitempty"`
+	DurationMs int64         `json:"durationMs,omitempty"`
+	Error      string        `json:"error,omitempty"`
+}
+
+// OriginalValue is the typed captured original for a workflow step.
+type OriginalValue struct {
+	Action string `json:"action"`
+	Value  any    `json:"value"`
+}
+
 // ActiveOperation holds state about an ongoing or interrupted operation.
 type ActiveOperation struct {
 	Op             string                   `json:"op"`
 	Action         string                   `json:"action"`
+	Direction      string                   `json:"direction,omitempty"`
+	Switch         string                   `json:"switch,omitempty"`
+	Workflow       string                   `json:"workflow,omitempty"`
 	Context        string                   `json:"context"`
 	StartedAt      string                   `json:"startedAt"`
 	Targets        int                      `json:"targets"`
 	ResourceStates map[string]ResourceState `json:"resourceStates"`
+	StepStates     map[string]StepState     `json:"stepStates,omitempty"`
 }
 
 // CompletedOperation holds metadata about the last finished operation.
 type CompletedOperation struct {
-	Op      string `json:"op"`
-	Action  string `json:"action"`
-	EndedAt string `json:"endedAt"`
-	Status  string `json:"status"`
-	OK      int    `json:"ok"`
-	Failed  int    `json:"failed"`
+	Op        string `json:"op"`
+	Action    string `json:"action"`
+	Direction string `json:"direction,omitempty"`
+	Switch    string `json:"switch,omitempty"`
+	Workflow  string `json:"workflow,omitempty"`
+	EndedAt   string `json:"endedAt"`
+	Status    string `json:"status"`
+	OK        int    `json:"ok"`
+	Failed    int    `json:"failed"`
 }
 
 // State represents the atomic snapshot saved in state.json.
 type State struct {
-	LastSeq           int64               `json:"lastSeq"`
-	ActiveOp          *ActiveOperation    `json:"activeOp,omitempty"`
-	OriginalSuspended map[string]bool     `json:"originalSuspended"`
-	LastCompletedOp   *CompletedOperation `json:"lastCompletedOp,omitempty"`
+	LastSeq           int64                    `json:"lastSeq"`
+	ActiveOp          *ActiveOperation         `json:"activeOp,omitempty"`
+	OriginalSuspended map[string]bool          `json:"originalSuspended"`
+	OriginalValues    map[string]OriginalValue `json:"originalValues,omitempty"`
+	LastCompletedOp   *CompletedOperation      `json:"lastCompletedOp,omitempty"`
 
 	dir string
 }
@@ -75,6 +99,7 @@ func DefaultStateDir() (string, error) {
 func New(dir string) *State {
 	return &State{
 		OriginalSuspended: make(map[string]bool),
+		OriginalValues:    make(map[string]OriginalValue),
 		dir:               dir,
 	}
 }
@@ -158,6 +183,17 @@ func Load(dir string) (*State, error) {
 	if st.OriginalSuspended == nil {
 		st.OriginalSuspended = make(map[string]bool)
 	}
+	if st.OriginalValues == nil {
+		st.OriginalValues = make(map[string]OriginalValue)
+	}
+	if st.ActiveOp != nil {
+		if st.ActiveOp.StepStates == nil {
+			st.ActiveOp.StepStates = make(map[string]StepState)
+		}
+		if st.ActiveOp.ResourceStates == nil {
+			st.ActiveOp.ResourceStates = make(map[string]ResourceState)
+		}
+	}
 	st.dir = dir
 
 	return st, nil
@@ -183,32 +219,72 @@ func (s *State) ApplyEvent(e *journal.Event) {
 		key = fmt.Sprintf("%s/%s/%s", e.Kind, e.Namespace, e.Name)
 	}
 
+	stepKey := e.Step
+	if stepKey == "" {
+		stepKey = key
+	} else if e.Workflow != "" {
+		stepKey = e.Workflow + "/" + e.Step
+	}
+	offDirection := e.Direction == "off" || (e.Direction == "" && e.Action == journal.ActionSuspend)
+
 	switch e.Event {
 	case journal.EventOpStart:
 		s.ActiveOp = &ActiveOperation{
 			Op:             e.Op,
 			Action:         e.Action,
+			Direction:      e.Direction,
+			Switch:         e.Switch,
+			Workflow:       e.Workflow,
 			Context:        e.Context,
 			StartedAt:      e.TS,
 			Targets:        e.Targets,
 			ResourceStates: make(map[string]ResourceState),
+			StepStates:     make(map[string]StepState),
 		}
 
 	case journal.EventResourceIntent:
+		original := e.Original
+		if original == nil {
+			original = e.From
+		}
+		desired := e.Desired
+		if desired == nil {
+			desired = e.To
+		}
 		if s.ActiveOp != nil && key != "" {
 			target := false
 			if e.To != nil {
 				target = *e.To
+			} else if v, ok := journal.BoolValue(desired); ok {
+				target = v
 			}
 			s.ActiveOp.ResourceStates[key] = ResourceState{
 				Phase:  PhaseInProgress,
 				Target: target,
 			}
 		}
-		// If this is a suspend operation, record original if not already recorded
+		if s.ActiveOp != nil && stepKey != "" {
+			s.ActiveOp.StepStates[stepKey] = StepState{
+				Phase:    PhaseInProgress,
+				Desired:  desired,
+				Original: original,
+			}
+		}
+		// Capture typed originals when entering the non-default (OFF) state.
+		if offDirection && original != nil && stepKey != "" {
+			if _, exists := s.OriginalValues[stepKey]; !exists {
+				s.OriginalValues[stepKey] = OriginalValue{Action: e.Action, Value: original}
+			}
+		}
+		// Keep the legacy Flux originals for v1 state compatibility.
 		if (e.Action == journal.ActionSuspend || (s.ActiveOp != nil && s.ActiveOp.Action == journal.ActionSuspend)) && e.From != nil && key != "" {
 			if _, exists := s.OriginalSuspended[key]; !exists {
 				s.OriginalSuspended[key] = *e.From
+			}
+		}
+		if v, ok := journal.BoolValue(original); ok && key != "" && (e.Action == "flux.suspend" || e.Action == "flux.resume") {
+			if _, exists := s.OriginalSuspended[key]; !exists {
+				s.OriginalSuspended[key] = v
 			}
 		}
 
@@ -222,24 +298,41 @@ func (s *State) ApplyEvent(e *journal.Event) {
 			if e.Status != journal.StatusOk {
 				phase = PhaseError
 			}
+			observedBool, _ := journal.BoolValue(e.Observed)
+			obs := observedBool
 			s.ActiveOp.ResourceStates[key] = ResourceState{
 				Phase:      phase,
 				Target:     target,
-				Observed:   e.Observed,
+				Observed:   &obs,
 				DurationMs: e.DurationMs,
 				Error:      e.Error,
 			}
+		}
+		if s.ActiveOp != nil && stepKey != "" {
+			phase := PhaseOK
+			if e.Status != journal.StatusOk {
+				phase = PhaseError
+			}
+			existing := s.ActiveOp.StepStates[stepKey]
+			existing.Phase = phase
+			existing.Observed = e.Observed
+			existing.DurationMs = e.DurationMs
+			existing.Error = e.Error
+			s.ActiveOp.StepStates[stepKey] = existing
 		}
 
 	case journal.EventOpEnd:
 		if s.ActiveOp != nil {
 			s.LastCompletedOp = &CompletedOperation{
-				Op:      e.Op,
-				Action:  s.ActiveOp.Action,
-				EndedAt: e.TS,
-				Status:  e.Status,
-				OK:      e.OK,
-				Failed:  e.Failed,
+				Op:        e.Op,
+				Action:    s.ActiveOp.Action,
+				Direction: s.ActiveOp.Direction,
+				Switch:    s.ActiveOp.Switch,
+				Workflow:  s.ActiveOp.Workflow,
+				EndedAt:   e.TS,
+				Status:    e.Status,
+				OK:        e.OK,
+				Failed:    e.Failed,
 			}
 			s.ActiveOp = nil
 		}

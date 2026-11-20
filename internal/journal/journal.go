@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	Version = 1
+	Version = 2
 
 	EventOpStart        = "op.start"
 	EventResourceIntent = "resource.intent"
@@ -38,6 +38,11 @@ type Event struct {
 	Op         string `json:"op"`
 	Event      string `json:"event"`
 	Action     string `json:"action,omitempty"`
+	Switch     string `json:"switch,omitempty"`
+	Workflow   string `json:"workflow,omitempty"`
+	Step       string `json:"step,omitempty"`
+	Direction  string `json:"direction,omitempty"`
+	Phase      string `json:"phase,omitempty"`
 	Context    string `json:"context,omitempty"`
 	Targets    int    `json:"targets,omitempty"`
 	Kind       string `json:"kind,omitempty"`
@@ -46,12 +51,45 @@ type Event struct {
 	From       *bool  `json:"from,omitempty"`
 	To         *bool  `json:"to,omitempty"`
 	Status     string `json:"status,omitempty"`
-	Observed   *bool  `json:"observed,omitempty"`
-	Expected   *bool  `json:"expected,omitempty"`
+	Observed   any    `json:"observed,omitempty"`
+	Expected   any    `json:"expected,omitempty"`
+	Original   any    `json:"original,omitempty"`
+	Desired    any    `json:"desired,omitempty"`
 	DurationMs int64  `json:"durationMs,omitempty"`
 	Error      string `json:"error,omitempty"`
 	OK         int    `json:"ok,omitempty"`
 	Failed     int    `json:"failed,omitempty"`
+}
+
+// BoolValue extracts a bool from a legacy bool/pointer or v2 any value.
+func BoolValue(v any) (bool, bool) {
+	switch t := v.(type) {
+	case bool:
+		return t, true
+	case *bool:
+		if t == nil {
+			return false, false
+		}
+		return *t, true
+	default:
+		return false, false
+	}
+}
+
+// IntValue extracts an int from a v2 JSON number.
+func IntValue(v any) (int, bool) {
+	switch t := v.(type) {
+	case int:
+		return t, true
+	case int32:
+		return int(t), true
+	case int64:
+		return int(t), true
+	case float64:
+		return int(t), true
+	default:
+		return 0, false
+	}
 }
 
 // Journal manages append-only logging to journal.jsonl.

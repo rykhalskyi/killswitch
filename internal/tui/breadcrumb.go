@@ -24,8 +24,9 @@ func (m Model) breadcrumb() string {
 }
 
 func (m Model) switchName(idx int) string {
-	if idx < 0 || idx >= len(switchDefs) {
+	defs := m.switchDefs()
+	if idx < 0 || idx >= len(defs) {
 		return ""
 	}
-	return switchDefs[idx].name
+	return defs[idx].name
 }

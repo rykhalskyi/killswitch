@@ -6,7 +6,7 @@ summary: Comprehensive user manual and CLI/TUI operational guide for Kill Switch
 
 # Kill Switch Manual
 
-This manual explains how to configure, operate, and troubleshoot Kill Switch (`killswitch`) for the Phase 1 Level 2 Flux freeze plus the Phase 2 safety and recovery work. For architecture principles, see [project-overview](project-overview.md); for compilation and tests, see [build-deploy](build-deploy.md).
+This manual explains how to configure, operate, and troubleshoot Kill Switch (`killswitch`) for the Phase 1 Level 2 Flux freeze, the Phase 2 safety and recovery work, and the Phase 3 layered switches and workload controls. For architecture principles, see [project-overview](project-overview.md); for compilation and tests, see [build-deploy](build-deploy.md).
 
 ---
 
@@ -14,14 +14,17 @@ This manual explains how to configure, operate, and troubleshoot Kill Switch (`k
 
 | Command | Purpose | Key Flags |
 |---|---|---|
-| `killswitch status` | View live cluster reconciliation state | `--json` |
-| `killswitch suspend` | Freeze configured resources (`spec.suspend: true`) | `--dry-run`, `--yes`, `--force` |
-| `killswitch restore` | Restore resources to recorded original states | `--dry-run`, `--yes`, `--force` |
-| `killswitch history` | Inspect past journaled operations | `--limit N`, `--json` |
+| `killswitch status` | View switch and cluster state | `--switch ID`, `--json` |
+| `killswitch <switch-id> on` | Restore originals / apply the ON state | `--dry-run`, `--yes`, `--force` |
+| `killswitch <switch-id> off` | Capture originals / apply the OFF state | `--dry-run`, `--yes`, `--force` |
+| `killswitch suspend` | Alias for `flux off` | `--dry-run`, `--yes`, `--force` |
+| `killswitch restore` | Alias for `flux on` | `--dry-run`, `--yes`, `--force` |
+| `killswitch validate` | Validate layered config without a cluster | — |
+| `killswitch history` | Inspect past journaled operations | `--switch ID`, `--limit N`, `--json` |
 | `killswitch tui` | Interactive terminal UI | — |
 
 Global flags for all commands:
-- `--config <path>`: Config file path (defaults to `./config.yaml`, `./config.example.yaml`).
+- `--config <path>`: Config directory or switches YAML path (defaults to `./switches.yaml`, `./config.yaml`, or `~/.config/killswitch`).
 - `--context <name>`: Target Kubernetes context (e.g. `talos`).
 - `--kubeconfig <path>`: Path to kubeconfig (defaults to `~/.kube/config` or `$KUBECONFIG`).
 - `--timeout <dur>`: API request timeout (default `60s`).
@@ -30,49 +33,79 @@ Global flags for all commands:
 
 ---
 
-## 2. Configuration (`config.yaml`)
+## 2. Configuration (`switches.yaml` + `workflows/`)
 
-Kill Switch targets resources explicitly declared in YAML. Order in configuration represents dependency order.
+Configuration is layered: `switches.yaml` defines the user-visible controls, and each workflow file defines the ordered steps a switch runs.
 
 ```yaml
-flux:
-  resources:
-    # Kustomizations in dependency order
-    - { kind: Kustomization, namespace: flux-system, name: flux-system }
-    - { kind: Kustomization, namespace: flux-system, name: infrastructure }
-    - { kind: Kustomization, namespace: flux-system, name: cert-manager-config }
-    - { kind: Kustomization, namespace: flux-system, name: apps }
-
-    # HelmReleases: infrastructure first, then workloads
-    - { kind: HelmRelease, namespace: local-path-storage, name: local-path-provisioner }
-    - { kind: HelmRelease, namespace: traefik, name: traefik }
-    - { kind: HelmRelease, namespace: monitoring, name: kube-prometheus-stack }
-    - { kind: HelmRelease, namespace: cnpg-system, name: cloudnative-pg }
-    - { kind: HelmRelease, namespace: metrics-server, name: metrics-server }
-    - { kind: HelmRelease, namespace: keda, name: keda }
-    - { kind: HelmRelease, namespace: cert-manager, name: cert-manager }
-    - { kind: HelmRelease, namespace: nextcloud, name: nextcloud }
-    - { kind: HelmRelease, namespace: homepage, name: homepage }
-    - { kind: HelmRelease, namespace: transcributed, name: transcributed }
-    - { kind: HelmRelease, namespace: langfuse, name: langfuse }
+# switches.yaml
+switches:
+  - id: flux
+    name: Flux Reconciliation
+    description: Suspend or resume Flux reconciliation
+    workflow: flux
+  - id: media
+    name: Media services
+    description: Scale media workloads to zero and restore them
+    workflow: media
 ```
 
+```yaml
+# workflows/media.yaml
+id: media
+name: Media services
+requires:
+  flux: suspended
+steps:
+  - id: jellyfin
+    action: kubernetes.scale
+    target: {kind: Deployment, namespace: media, name: jellyfin}
+    states:
+      off: {replicas: 0}
+      on: {restore: previous, default: 1}
+```
+
+Steps run in declaration order for ON and in reverse order for OFF. `requires.flux` accepts `suspended`, `active`, or `any` and creates a two-way Flux interlock.
+
+Supported actions in Phase 3:
+- `flux.suspend` / `flux.resume` on `Kustomization` and `HelmRelease` (captures `spec.suspend`).
+- `kubernetes.scale` on `Deployment` and `StatefulSet` (captures `spec.replicas`).
+- `kubernetes.suspend` on `CronJob` (captures `spec.suspend`; optional).
+
 Validation rules:
-- Supported kinds: `Kustomization` and `HelmRelease`.
-- Non-empty `namespace` and `name`.
-- No duplicates.
-- At least one resource required.
+- Switch ids are unique and reference existing workflows.
+- Workflow ids are unique; step ids are unique within a workflow.
+- Action targets match the supported kinds and have a non-empty namespace and name.
+- `requires.flux` is `suspended`, `active`, or `any`; the Flux switch cannot require itself.
+- Legacy single-file `flux.resources` configs are rejected. Run `killswitch validate` to check a config without a cluster.
+
+Originals are captured only on ON→OFF, never overwritten, and typed per action. An ON transition without a recorded original is refused unless `states.on.default` is set.
 
 ---
 
 ## 3. Workflows
 
+### 3.0 Switch Transitions (`on` / `off`)
+
+Any configured switch can be toggled by id:
+
+```bash
+killswitch media off --dry-run
+killswitch media off --yes
+killswitch media on --yes
+```
+
+OFF captures the original state for every step (replicas or suspend flags) before applying the non-default state. ON restores those originals, or applies a fixed/default value when no original exists. If a workflow requires Flux suspended, turning it ON first suspends Flux in the same operation. Turning Flux ON first runs the OFF workflow of every currently-ON dependent in `switches.yaml` order, then resumes reconciliation.
+
+`killswitch suspend` and `killswitch restore` remain aliases for the Flux switch (`flux off` / `flux on`).
+
 ### 3.1 Inspecting Cluster Status
 
-Run `status` to inspect all configured resources:
+Run `status` to inspect every switch, then the Flux resources:
 
 ```sh
 killswitch status
+killswitch status --switch media
 ```
 
 Output fields:
@@ -145,7 +178,7 @@ Launch the Bubble Tea interface:
 killswitch tui
 ```
 
-The panel title is a breadcrumb showing where you are, for example `Flux Controls › Flux Reconciliation › Properties` or `Flux Controls › Flux Reconciliation › Operation History`.
+The switch list is loaded from `switches.yaml`. The panel title is a breadcrumb showing where you are, for example `Flux Controls › Flux Reconciliation › Properties` or `Flux Controls › Flux Reconciliation › Operation History`. The properties view lists workflow steps with their observed state, original value, and action.
 
 The confirmation dialog is composited over the dimmed switch table, so the underlying view stays visible while the pending change is reviewed.
 
@@ -169,6 +202,7 @@ Query the write-ahead journal (`journal.jsonl`) from the CLI or TUI:
 
 ```sh
 killswitch history --limit 10
+killswitch history --switch media
 killswitch history --json
 ```
 
@@ -186,10 +220,11 @@ Located at `$XDG_STATE_HOME/killswitch/journal.jsonl` (mode `0600`):
 - Prior to patching any resource, a `resource.intent` record is written and **fsynced** to disk.
 - After patching and read-back verification, `resource.result` is appended.
 - `op.end` records the final status (`success`, `partial`, or `failed`).
+- Journal v2 events carry `switch`, `workflow`, `step`, `direction`, `original`, `desired`, `observed`, and `phase`. v1 journals still replay and continue under v2.
 - Torn lines from mid-write process crashes are automatically detected and discarded on read.
 
 ### 4.2 State Snapshots (`state.json`)
-- Derived atomic snapshot of current progress, recorded originals (`originalSuspended`), and sequence IDs.
+- Derived atomic snapshot of current progress, recorded originals (`originalSuspended` for Flux and typed `originalValues` per workflow step), and sequence IDs.
 - Written via temporary file, fsync, atomic rename, and directory fsync.
 - Automatically reconstructed from `journal.jsonl` if missing, corrupted, or mismatched.
 
@@ -198,7 +233,7 @@ Located at `$XDG_STATE_HOME/killswitch/journal.jsonl` (mode `0600`):
 - Concurrent invocations immediately abort with exit code `4`.
 
 ### 4.4 Conflict Detection
-- Kill Switch compares each target's observed `spec.suspend` with the state it expects from the last successful operation and the recorded originals.
+- Kill Switch compares each step's observed value (`spec.suspend` or `spec.replicas`) with the state it expects from the last successful operation and the recorded originals.
 - Drift is detected in both directions: external un-suspend after a freeze and external suspend after a restore.
 - Conflicts are journaled with the real `expected` and `observed` values.
 - Execution halts with exit code `3`.
@@ -209,7 +244,7 @@ Located at `$XDG_STATE_HOME/killswitch/journal.jsonl` (mode `0600`):
 
 ### 4.5 Interrupted Run Recovery
 - If terminated mid-run, `status` surfaces the interrupted operation and its per-resource phases.
-- Recovery is scoped to the resources recorded in `ActiveOp.ResourceStates`.
+- Recovery is scoped to the steps recorded in `ActiveOp.StepStates` (with legacy `ResourceStates` replay for v1 journals). Originals are never recaptured during recovery.
 - `killswitch suspend` completes only the targets the interrupted suspend had not verified as suspended.
 - `killswitch restore` reverts only the targets the interrupted operation actually touched, using their recorded originals.
 - Resources outside the interrupted operation are left untouched.

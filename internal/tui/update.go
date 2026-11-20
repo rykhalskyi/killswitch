@@ -4,7 +4,21 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/rykhalskyi/killswitch/internal/engine"
 )
+
+func (m Model) pendingTransition() (string, engine.Direction) {
+	if m.pendingSwitch != "" {
+		return m.pendingSwitch, m.pendingDir
+	}
+	sw := m.selectedSwitch()
+	dir := engine.DirectionOn
+	if m.pendingAction == engine.ActionSuspend {
+		dir = engine.DirectionOff
+	}
+	return sw.id, dir
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -36,6 +50,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pendingPlan = msg.plan
 		m.pendingAction = msg.action
+		m.pendingSwitch = msg.switchID
+		m.pendingDir = msg.direction
 		m.pendingForce = false
 		m.confirmOpen = true
 		return m, nil
@@ -90,14 +106,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "y", "Y", "enter":
 				m.confirmOpen = false
-				return m, m.startExecution(m.pendingAction, false)
+				switchID, dir := m.pendingTransition()
+				return m, m.startExecution(switchID, dir, false)
 			case "f", "F":
 				if m.pendingPlan == nil || len(m.pendingPlan.Conflicts) == 0 {
 					return m, nil
 				}
 				m.confirmOpen = false
 				m.pendingForce = true
-				return m, m.startExecution(m.pendingAction, true)
+				switchID, dir := m.pendingTransition()
+				return m, m.startExecution(switchID, dir, true)
 			case "n", "N", "esc", "q":
 				m.confirmOpen = false
 				m.pendingPlan = nil
@@ -115,14 +133,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view == viewHistory {
 				return m, nil
 			}
-			action, ok := m.nextAction()
+			switchID, dir, ok := m.nextTransition()
 			if !ok {
 				m.errorMessage = "Status not loaded yet"
 				return m, nil
 			}
 			m.errorMessage = ""
 			m.infoMessage = ""
-			return m, m.fetchPlanCmd(action)
+			return m, m.fetchPlanCmd(switchID, dir, engine.LegacyAction(dir))
 
 		case "r", "u":
 			if m.view == viewHistory {
@@ -172,7 +190,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.detailCursor++
 				}
 			default:
-				if m.cursor < len(switchDefs)-1 {
+				if m.cursor < len(m.switchDefs())-1 {
 					m.cursor++
 				}
 			}

@@ -1,7 +1,7 @@
 ---
 created: 2026-11-17
 type: ticket
-status: proposed
+status: implemented
 summary: Phase 3 — adopt layered switch/workflow config and action handlers, then implement Kubernetes workload scaling.
 ---
 
@@ -53,4 +53,11 @@ Risks: journal schema migration; config rewrite; engine/TUI refactor breadth. Mi
 
 ## Outcome
 
-Not started.
+Implemented on `feature/phase3-workload-controls`.
+
+- `internal/config`: layered `switches.yaml` + `workflows/*.yaml` loader, reference/action validation, legacy programmatic flux normalization, and `killswitch validate`.
+- `internal/actions`: handler registry and lifecycle, `flux.suspend`/`flux.resume`, `kubernetes.scale` (Deployment/StatefulSet), optional `kubernetes.suspend` (CronJob), plus a dynamic-client implementation.
+- `internal/journal`, `internal/state`: journal v2 typed `original`/`desired`/`observed` fields keyed by switch/workflow/step, typed `originalValues`, `StepStates` recovery, and v1 replay support.
+- `internal/engine`: generalized plan/execute/status around workflow steps, live switch states, typed conflicts, stop-on-first-step-failure, forward prerequisite auto-toggle, and the reverse Flux-dependent cascade journaled as one operation.
+- `internal/cli`, `internal/tui`: `<switch-id> on|off`, `status --switch`, `history --switch`, `validate`, Flux aliases, config-loaded switch list, and step-based properties view.
+- Tests cover scaling, originals restore, conflicts, interrupted resume without recapture, forward/reverse interlock ordering, v1 replay, config validation, and Kubernetes fake-client scaling. `go test ./...`, `go vet ./...`, `gofmt -l .` pass. A live-cluster smoke test remains pending until the homelab cluster is online.

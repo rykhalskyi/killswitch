@@ -158,6 +158,16 @@ func (c *KubeFluxClient) DiscoverGVRs(ctx context.Context) error {
 	return nil
 }
 
+// Dynamic returns the underlying dynamic client for other action handlers.
+func (c *KubeFluxClient) Dynamic() dynamic.Interface {
+	return c.dynamicClient
+}
+
+// Discovery returns the underlying discovery client.
+func (c *KubeFluxClient) Discovery() discovery.DiscoveryInterface {
+	return c.discoveryClient
+}
+
 // GetGVR returns the discovered or default GVR for a kind.
 func (c *KubeFluxClient) GetGVR(kind string) (schema.GroupVersionResource, error) {
 	gvr, ok := c.gvrs[kind]

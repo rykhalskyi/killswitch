@@ -248,8 +248,8 @@ func TestEnginePartialFailure(t *testing.T) {
 	if err != ErrPartialFailure {
 		t.Fatalf("expected ErrPartialFailure, got %v", err)
 	}
-	if report.OK != 3 || report.Failed != 1 {
-		t.Errorf("expected 3 OK, 1 Failed, got OK=%d, Failed=%d", report.OK, report.Failed)
+	if report.OK != 2 || report.Failed != 1 {
+		t.Errorf("expected 2 OK, 1 Failed (stop on first failure), got OK=%d, Failed=%d", report.OK, report.Failed)
 	}
 	if report.GlobalStatus != GlobalStatusPartial {
 		t.Errorf("expected GlobalStatusPartial, got %s", report.GlobalStatus)
@@ -561,10 +561,10 @@ func TestEngineConflictDetectionAfterRestore(t *testing.T) {
 	for _, ev := range events {
 		if ev.Event == journal.EventConflict && ev.Name == "apps" {
 			found = true
-			if ev.Expected == nil || *ev.Expected {
+			if exp, ok := journal.BoolValue(ev.Expected); !ok || exp {
 				t.Errorf("expected journaled expectation false, got %v", ev.Expected)
 			}
-			if ev.Observed == nil || !*ev.Observed {
+			if obs, ok := journal.BoolValue(ev.Observed); !ok || !obs {
 				t.Errorf("expected journaled observation true, got %v", ev.Observed)
 			}
 		}

@@ -38,9 +38,9 @@ func (m Model) renderConfirm(bodyHeight int) string {
 		return truncateText("Confirm switch change? [y] yes / [n] no", m.width)
 	}
 
-	sw := switchDefs[m.cursor]
+	sw := m.selectedSwitch()
 	current, target := "ON", "OFF"
-	if m.pendingAction == engine.ActionRestore {
+	if m.pendingAction == engine.ActionRestore || m.pendingDir == engine.DirectionOn {
 		current, target = "OFF", "ON"
 	}
 
@@ -48,7 +48,7 @@ func (m Model) renderConfirm(bodyHeight int) string {
 		modalTitleStyle.Render("CONFIRM SWITCH CHANGE"),
 		"",
 		cell(sw.name+": "+current+" → "+target, contentW),
-		cell(fmt.Sprintf("Action: %s · %d resources", m.pendingAction, len(plan.Items)), contentW),
+		cell(fmt.Sprintf("Action: %s · %d steps", m.pendingAction, len(plan.Items)), contentW),
 		"",
 	}
 
@@ -68,11 +68,18 @@ func (m Model) renderConfirm(bodyHeight int) string {
 	}
 	for i := 0; i < show; i++ {
 		item := plan.Items[i]
-		targetState := "ACTIVE"
-		if item.TargetSuspended {
-			targetState = "SUSPENDED"
+		targetState := fmt.Sprintf("%v", item.DesiredValue)
+		if item.Action == "flux.suspend" || item.Action == "flux.resume" || item.Action == "kubernetes.suspend" {
+			targetState = "ACTIVE"
+			if b, ok := item.DesiredValue.(bool); ok && b {
+				targetState = "SUSPENDED"
+			}
 		}
-		lines = append(lines, cell(fmt.Sprintf("%2d. %s/%s → %s", i+1, item.Resource.Kind, item.Resource.Name, targetState), contentW))
+		label := item.Resource.Kind + "/" + item.Resource.Name
+		if item.Switch != "" && item.Switch != sw.id {
+			label = item.Switch + " " + label
+		}
+		lines = append(lines, cell(fmt.Sprintf("%2d. %s → %s", i+1, label, targetState), contentW))
 	}
 
 	footer := "[y/enter] Confirm    [n/esc] Cancel"

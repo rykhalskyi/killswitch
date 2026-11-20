@@ -1,0 +1,113 @@
+id: flux
+name: Flux reconciliation
+requires:
+  flux: any
+
+# Steps are executed in order for ON and in reverse order for OFF.
+# ON order: HelmReleases forward, then Kustomizations forward.
+# OFF order is the reverse, which preserves dependency ordering.
+steps:
+  - id: helm-local-path-provisioner
+    action: flux.suspend
+    target: {kind: HelmRelease, namespace: local-path-storage, name: local-path-provisioner}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: helm-traefik
+    action: flux.suspend
+    target: {kind: HelmRelease, namespace: traefik, name: traefik}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: helm-kube-prometheus-stack
+    action: flux.suspend
+    target: {kind: HelmRelease, namespace: monitoring, name: kube-prometheus-stack}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: helm-cloudnative-pg
+    action: flux.suspend
+    target: {kind: HelmRelease, namespace: cnpg-system, name: cloudnative-pg}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: helm-metrics-server
+    action: flux.suspend
+    target: {kind: HelmRelease, namespace: metrics-server, name: metrics-server}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: helm-keda
+    action: flux.suspend
+    target: {kind: HelmRelease, namespace: keda, name: keda}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: helm-cert-manager
+    action: flux.suspend
+    target: {kind: HelmRelease, namespace: cert-manager, name: cert-manager}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: helm-nextcloud
+    action: flux.suspend
+    target: {kind: HelmRelease, namespace: nextcloud, name: nextcloud}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: helm-homepage
+    action: flux.suspend
+    target: {kind: HelmRelease, namespace: homepage, name: homepage}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: helm-transcributed
+    action: flux.suspend
+    target: {kind: HelmRelease, namespace: transcributed, name: transcributed}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: helm-langfuse
+    action: flux.suspend
+    target: {kind: HelmRelease, namespace: langfuse, name: langfuse}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: kustomization-flux-system
+    action: flux.suspend
+    target: {kind: Kustomization, namespace: flux-system, name: flux-system}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: kustomization-infrastructure
+    action: flux.suspend
+    target: {kind: Kustomization, namespace: flux-system, name: infrastructure}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: kustomization-cert-manager-config
+    action: flux.suspend
+    target: {kind: Kustomization, namespace: flux-system, name: cert-manager-config}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
+
+  - id: kustomization-apps
+    action: flux.suspend
+    target: {kind: Kustomization, namespace: flux-system, name: apps}
+    states:
+      off: {suspend: true}
+      on: {restore: previous, default: false}
