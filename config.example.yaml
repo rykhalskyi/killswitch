@@ -4,7 +4,12 @@ switches:
     description: Suspend or resume Flux reconciliation
     workflow: flux
 
-  - id: media
-    name: Media services
-    description: Scale media workloads to zero and restore them
-    workflow: media
+  - id: navidrome
+    name: Navidrome
+    description: Scale the Navidrome music server to zero (auto-suspends Flux)
+    workflow: navidrome
+
+  - id: pullini
+    name: Pullini
+    description: Scale Pullini to zero (auto-suspends Flux)
+    workflow: pullini

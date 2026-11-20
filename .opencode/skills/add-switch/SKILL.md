@@ -28,46 +28,42 @@ Append to the `switches:` list. `workflow` must match a workflow id.
 
 ```yaml
 switches:
-  - id: media
-    name: Media services
-    description: Scale media workloads to zero and restore them
-    workflow: media
+  - id: navidrome
+    name: Navidrome
+    description: Scale the Navidrome music server to zero (auto-suspends Flux)
+    workflow: navidrome
 ```
 
 Rules:
-- `id` is unique, lowercase, and is what the CLI accepts (`killswitch media off`).
+- `id` is unique, lowercase, and is what the CLI accepts (`killswitch navidrome off`).
 - `name` is the TUI label.
 - `workflow` is the workflow file's `id`, normally the same slug.
 
 ## 3. Create `workflows/<id>.yaml`
 
 Start from the closest example:
-- `workflows/media.yaml` — workload scaling with a Flux prerequisite.
+- `workflows/navidrome.yaml` — one Deployment with a Flux prerequisite.
+- `workflows/pullini.yaml` — the same pattern for another Deployment.
 - `workflows/flux.yaml` — the Flux reconciliation switch.
 
 ### Workload scaling template
 
 ```yaml
-id: media
-name: Media services
+id: navidrome
+name: Navidrome
 requires:
   flux: suspended        # optional: suspended | active | any
 
 steps:
-  - id: jellyfin
+  - id: navidrome
     action: kubernetes.scale
-    target: {kind: Deployment, namespace: media, name: jellyfin}
-    states:
-      off: {replicas: 0}
-      on: {restore: previous, default: 1}
-
-  - id: sonarr
-    action: kubernetes.scale
-    target: {kind: StatefulSet, namespace: media, name: sonarr}
+    target: {kind: Deployment, namespace: navidrome, name: navidrome}
     states:
       off: {replicas: 0}
       on: {restore: previous, default: 1}
 ```
+
+Add more steps (for example a `StatefulSet`) by repeating the same block with a unique `id` and target.
 
 - Steps run in declaration order for ON and in reverse order for OFF.
 - OFF captures originals; ON restores them.
@@ -100,7 +96,7 @@ Only `Kustomization` and `HelmRelease` targets are valid for Flux actions.
 steps:
   - id: backups
     action: kubernetes.suspend
-    target: {kind: CronJob, namespace: media, name: backups}
+    target: {kind: CronJob, namespace: navidrome, name: backups}
     states:
       off: {suspend: true}
       on: {restore: previous, default: false}
@@ -128,11 +124,11 @@ Validation catches duplicate ids, missing workflow references, unsupported actio
 With a cluster available:
 
 ```sh
-killswitch status --switch media
-killswitch media off --dry-run
-killswitch media off --yes
-killswitch status --switch media
-killswitch media on --yes
+killswitch status --switch navidrome
+killswitch navidrome off --dry-run
+killswitch navidrome off --yes
+killswitch status --switch navidrome
+killswitch navidrome on --yes
 ```
 
 Dry-run lists the primary transition and every cascaded step. Conflicts require `--force`. Missing targets are a hard error.

@@ -44,22 +44,22 @@ switches:
     name: Flux Reconciliation
     description: Suspend or resume Flux reconciliation
     workflow: flux
-  - id: media
-    name: Media services
-    description: Scale media workloads to zero and restore them
-    workflow: media
+  - id: navidrome
+    name: Navidrome
+    description: Scale the Navidrome music server to zero (auto-suspends Flux)
+    workflow: navidrome
 ```
 
 ```yaml
-# workflows/media.yaml
-id: media
-name: Media services
+# workflows/navidrome.yaml
+id: navidrome
+name: Navidrome
 requires:
   flux: suspended
 steps:
-  - id: jellyfin
+  - id: navidrome
     action: kubernetes.scale
-    target: {kind: Deployment, namespace: media, name: jellyfin}
+    target: {kind: Deployment, namespace: navidrome, name: navidrome}
     states:
       off: {replicas: 0}
       on: {restore: previous, default: 1}
@@ -90,9 +90,9 @@ Originals are captured only on ON→OFF, never overwritten, and typed per action
 Any configured switch can be toggled by id:
 
 ```bash
-killswitch media off --dry-run
-killswitch media off --yes
-killswitch media on --yes
+killswitch navidrome off --dry-run
+killswitch navidrome off --yes
+killswitch navidrome on --yes
 ```
 
 OFF captures the original state for every step (replicas or suspend flags) before applying the non-default state. ON restores those originals, or applies a fixed/default value when no original exists. If a workflow requires Flux suspended, turning it ON first suspends Flux in the same operation. Turning Flux ON first runs the OFF workflow of every currently-ON dependent in `switches.yaml` order, then resumes reconciliation.
@@ -105,7 +105,7 @@ Run `status` to inspect every switch, then the Flux resources:
 
 ```sh
 killswitch status
-killswitch status --switch media
+killswitch status --switch navidrome
 ```
 
 Output fields:
@@ -202,7 +202,7 @@ Query the write-ahead journal (`journal.jsonl`) from the CLI or TUI:
 
 ```sh
 killswitch history --limit 10
-killswitch history --switch media
+killswitch history --switch navidrome
 killswitch history --json
 ```
 

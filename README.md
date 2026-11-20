@@ -83,7 +83,8 @@ config/
 ├── switches.yaml
 └── workflows/
     ├── flux.yaml
-    └── media.yaml
+    ├── navidrome.yaml
+    └── pullini.yaml
 ```
 
 ### Example Configuration
@@ -97,30 +98,30 @@ switches:
     description: Suspend or resume Flux reconciliation
     workflow: flux
 
-  - id: media
-    name: Media services
-    description: Scale media workloads to zero and restore them
-    workflow: media
+  - id: navidrome
+    name: Navidrome
+    description: Scale the Navidrome music server to zero (auto-suspends Flux)
+    workflow: navidrome
 ```
 
-`workflows/media.yaml`:
+`workflows/navidrome.yaml`:
 
 ```yaml
-id: media
-name: Media services
+id: navidrome
+name: Navidrome
 requires:
   flux: suspended
 
 steps:
-  - id: jellyfin
+  - id: navidrome
     action: kubernetes.scale
-    target: {kind: Deployment, namespace: media, name: jellyfin}
+    target: {kind: Deployment, namespace: navidrome, name: navidrome}
     states:
       off: {replicas: 0}
       on: {restore: previous, default: 1}
 ```
 
-See `workflows/flux.yaml` for the full Flux example. Steps run in order for ON and in reverse order for OFF.
+`workflows/pullini.yaml` follows the same pattern. See `workflows/flux.yaml` for the full Flux example. Steps run in order for ON and in reverse order for OFF.
 
 Supported actions in Phase 3:
 
@@ -149,7 +150,7 @@ Displays the live status of every switch and, for the Flux switch, the configure
 ./killswitch status
 
 # One switch only
-./killswitch status --switch media
+./killswitch status --switch navidrome
 
 # Machine-readable JSON output
 ./killswitch status --json
@@ -168,9 +169,9 @@ Output highlights:
 Turns any configured switch ON or OFF. OFF captures originals and applies the non-default state; ON restores the captured originals (or the configured fixed/default state).
 
 ```bash
-./killswitch media off --dry-run
-./killswitch media off --yes
-./killswitch media on --yes
+./killswitch navidrome off --dry-run
+./killswitch navidrome off --yes
+./killswitch navidrome on --yes
 ```
 
 `killswitch suspend` and `killswitch restore` remain aliases for `flux off` and `flux on`.
@@ -224,7 +225,7 @@ Inspects past operations recorded in the write-ahead journal (`journal.jsonl`).
 ./killswitch history --limit 10
 
 # Filter by switch
-./killswitch history --switch media --limit 10
+./killswitch history --switch navidrome --limit 10
 
 # Output full history as JSON
 ./killswitch history --json

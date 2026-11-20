@@ -1,0 +1,15 @@
+id: navidrome
+name: Navidrome
+requires:
+  flux: suspended
+
+# Navidrome is reconciled by Flux's "apps" Kustomization, which pins
+# replicas: 1. The Phase 3 interlock suspends Flux before scaling it down and
+# keeps Flux paused while this switch is ON.
+steps:
+  - id: navidrome
+    action: kubernetes.scale
+    target: {kind: Deployment, namespace: navidrome, name: navidrome}
+    states:
+      off: {replicas: 0}
+      on: {restore: previous, default: 1}
