@@ -8,6 +8,10 @@ import (
 )
 
 func (m Model) renderDetail(bodyHeight int) string {
+	if st, ok := m.selectedSwitchStatus(); ok && len(st.Steps) > 0 {
+		return m.renderStepDetail(bodyHeight, st)
+	}
+
 	var resources []engine.ResourceStatusItem
 	if m.status != nil {
 		resources = m.status.Resources
@@ -54,6 +58,73 @@ func (m Model) renderDetail(bodyHeight int) string {
 		title = fmt.Sprintf("%s  (%d-%d of %d)", title, start+1, start+len(visible), len(resources))
 	}
 
+	return m.renderPanel(title, right, colHeader, visible, bodyHeight)
+}
+
+// selectedSwitchStatus returns the live status of the selected switch.
+func (m Model) selectedSwitchStatus() (engine.SwitchStatus, bool) {
+	if m.status == nil {
+		return engine.SwitchStatus{}, false
+	}
+	def := m.selectedSwitch()
+	for _, st := range m.status.Switches {
+		if st.ID == def.id {
+			return st, true
+		}
+	}
+	return engine.SwitchStatus{}, false
+}
+
+func (m Model) renderStepDetail(bodyHeight int, st engine.SwitchStatus) string {
+	steps := st.Steps
+	if m.detailCursor >= len(steps) {
+		m.detailCursor = len(steps) - 1
+	}
+	if m.detailCursor < 0 {
+		m.detailCursor = 0
+	}
+
+	usable := m.contentWidth()
+	widths := allocWidths(usable-5, []int{14, 18, 24, 10, 12, 12})
+	colHeader := cell("STEP", widths[0]) + " " +
+		cell("ACTION", widths[1]) + " " +
+		cell("TARGET", widths[2]) + " " +
+		cell("STATE", widths[3]) + " " +
+		cell("OBSERVED", widths[4]) + " " +
+		cell("ORIGINAL", widths[5])
+
+	rows := make([]string, 0, len(steps))
+	for i, step := range steps {
+		observed := fmt.Sprintf("%v", step.Observed)
+		if !step.Exists {
+			observed = "MISSING"
+		}
+		row := strings.Join([]string{
+			cell(step.Step, widths[0]),
+			cell(step.Action, widths[1]),
+			cell(step.Target.Kind+"/"+step.Target.Name, widths[2]),
+			cell(step.State, widths[3]),
+			cell(observed, widths[4]),
+			cell(fmt.Sprintf("%v", step.Original), widths[5]),
+		}, " ")
+		if i == m.detailCursor {
+			row = selectedRowStyle.Render(row)
+		}
+		rows = append(rows, row)
+	}
+
+	innerH := bodyHeight - 2
+	maxRows := innerH - 6
+	if maxRows < 1 {
+		maxRows = 1
+	}
+	visible, start := windowRows(rows, m.detailCursor, maxRows)
+
+	title := m.breadcrumb()
+	right := fmt.Sprintf("%d steps", len(steps))
+	if len(steps) > len(visible) {
+		title = fmt.Sprintf("%s  (%d-%d of %d)", title, start+1, start+len(visible), len(steps))
+	}
 	return m.renderPanel(title, right, colHeader, visible, bodyHeight)
 }
 

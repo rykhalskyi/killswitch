@@ -21,6 +21,11 @@ const (
 
 	KindKustomization = "Kustomization"
 	KindHelmRelease   = "HelmRelease"
+
+	// Status plans observe every configured step, so client-go's default
+	// 5 QPS / 10 burst throttle makes the TUI feel unresponsive.
+	defaultQPS   = 50
+	defaultBurst = 100
 )
 
 // ResourceInfo represents the live state of a Flux custom resource.
@@ -79,6 +84,7 @@ func NewClient(kubeconfigPath, contextName string) (*KubeFluxClient, string, err
 	if err != nil {
 		return nil, "", fmt.Errorf("building kubernetes client config: %w", err)
 	}
+	configureRESTConfig(restConfig)
 
 	dyn, err := dynamic.NewForConfig(restConfig)
 	if err != nil {
@@ -93,8 +99,26 @@ func NewClient(kubeconfigPath, contextName string) (*KubeFluxClient, string, err
 	return NewClientFromClients(dyn, disco), activeContext, nil
 }
 
+// configureRESTConfig applies client tuning shared by every constructor.
+func configureRESTConfig(restConfig *rest.Config) {
+	if restConfig == nil {
+		return
+	}
+	// Warning headers (e.g. PodSecurity admission on workload patches) are
+	// benign but client-go renders them to stderr, which corrupts the TUI.
+	restConfig.WarningHandler = rest.NoWarnings{}
+	if restConfig.QPS == 0 {
+		restConfig.QPS = defaultQPS
+	}
+	if restConfig.Burst == 0 {
+		restConfig.Burst = defaultBurst
+	}
+}
+
 // NewClientFromConfig creates a client using an existing *rest.Config.
 func NewClientFromConfig(restConfig *rest.Config) (*KubeFluxClient, error) {
+	configureRESTConfig(restConfig)
+
 	dyn, err := dynamic.NewForConfig(restConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating dynamic kubernetes client: %w", err)
@@ -156,6 +180,16 @@ func (c *KubeFluxClient) DiscoverGVRs(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Dynamic returns the underlying dynamic client for other action handlers.
+func (c *KubeFluxClient) Dynamic() dynamic.Interface {
+	return c.dynamicClient
+}
+
+// Discovery returns the underlying discovery client.
+func (c *KubeFluxClient) Discovery() discovery.DiscoveryInterface {
+	return c.discoveryClient
 }
 
 // GetGVR returns the discovered or default GVR for a kind.

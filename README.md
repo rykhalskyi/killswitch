@@ -2,7 +2,9 @@
 
 **Kill Switch** is a single-binary, reversible infrastructure operations controller for Kubernetes and homelab clusters. 
 
-Phase 1 implements a **Level 2 Flux Freeze**: suspending and restoring configured Flux `Kustomization` and `HelmRelease` resources with strict dependency ordering, write-ahead JSON journaling, atomic crash recovery, and both CLI and interactive TUI interfaces.
+Phases 1–2 implement a **Level 2 Flux Freeze**: suspending and restoring configured Flux `Kustomization` and `HelmRelease` resources with strict dependency ordering, write-ahead JSON journaling, atomic crash recovery, and both CLI and interactive TUI interfaces.
+
+Phase 3 adds layered `switches.yaml` + `workflows/*.yaml` configuration, a Go action-handler registry (`flux.suspend`/`flux.resume`, `kubernetes.scale`, optional `kubernetes.suspend`), typed journal v2 originals, and a Flux dependency interlock that suspends reconciliation before scaling a dependent down.
 
 ---
 
@@ -66,35 +68,83 @@ go build -o killswitch ./cmd/killswitch
 ## Configuration
 
 Kill Switch searches for configuration in the following order:
-1. `--config <path>` flag
-2. `./config.yaml`
-3. `./config.yml`
-4. `./config.example.yaml`
-5. `~/.config/killswitch/config.yaml`
+1. `--config <path>` flag (a directory or a switches YAML file)
+2. `./switches.yaml`
+3. `./switches.yml`
+4. `./config.yaml`
+5. `./config.yml`
+6. `./config.example.yaml`
+7. `~/.config/killswitch/`
 
-### Example Configuration (`config.example.yaml`)
+Configuration is layered: `switches.yaml` plus one YAML file per workflow in `workflows/` next to it. Legacy single-file `flux.resources` configs are rejected.
+
+```
+config/
+├── switches.yaml
+└── workflows/
+    ├── flux.yaml
+    ├── navidrome.yaml
+    ├── pullini.yaml
+    └── cloudflared.yaml
+```
+
+### Example Configuration
+
+`config.example.yaml`:
 
 ```yaml
-flux:
-  resources:
-    # Kustomizations (dependency order)
-    - { kind: Kustomization, namespace: flux-system, name: flux-system }
-    - { kind: Kustomization, namespace: flux-system, name: infrastructure }
-    - { kind: Kustomization, namespace: flux-system, name: cert-manager-config }
-    - { kind: Kustomization, namespace: flux-system, name: apps }
+switches:
+  - id: flux
+    name: Flux Reconciliation
+    description: Suspend or resume Flux reconciliation
+    icon: ★
+    workflow: flux
 
-    # HelmReleases (infrastructure first, then applications)
-    - { kind: HelmRelease, namespace: local-path-storage, name: local-path-provisioner }
-    - { kind: HelmRelease, namespace: traefik, name: traefik }
-    - { kind: HelmRelease, namespace: monitoring, name: kube-prometheus-stack }
-    - { kind: HelmRelease, namespace: cnpg-system, name: cloudnative-pg }
-    - { kind: HelmRelease, namespace: metrics-server, name: metrics-server }
-    - { kind: HelmRelease, namespace: keda, name: keda }
-    - { kind: HelmRelease, namespace: cert-manager, name: cert-manager }
-    - { kind: HelmRelease, namespace: nextcloud, name: nextcloud }
-    - { kind: HelmRelease, namespace: homepage, name: homepage }
-    - { kind: HelmRelease, namespace: transcributed, name: transcributed }
-    - { kind: HelmRelease, namespace: langfuse, name: langfuse }
+  - id: navidrome
+    name: Navidrome
+    description: Scale the Navidrome music server to zero (auto-suspends Flux)
+    workflow: navidrome
+
+  - id: cloudflared
+    name: Cloudflared
+    description: Scale Cloudflared to zero and close the tunnel (auto-suspends Flux)
+    icon: 🌐
+    workflow: cloudflared
+```
+
+`icon` is optional. It is rendered in a fixed-width slot in the TUI so names stay aligned; switches without an icon simply leave that slot blank.
+
+`workflows/navidrome.yaml`:
+
+```yaml
+id: navidrome
+name: Navidrome
+requires:
+  flux: suspended
+
+steps:
+  - id: navidrome
+    action: kubernetes.scale
+    target: {kind: Deployment, namespace: navidrome, name: navidrome}
+    states:
+      off: {replicas: 0}
+      on: {restore: previous, default: 1}
+```
+
+`workflows/pullini.yaml` and `workflows/cloudflared.yaml` follow the same pattern. See `workflows/flux.yaml` for the full Flux example. Steps run in order for ON and in reverse order for OFF.
+
+Supported actions in Phase 3:
+
+| Action | Targets | Captured original |
+|---|---|---|
+| `flux.suspend` / `flux.resume` | Flux `Kustomization`, `HelmRelease` | `spec.suspend` |
+| `kubernetes.scale` | `Deployment`, `StatefulSet` | `spec.replicas` |
+| `kubernetes.suspend` (optional) | `CronJob` | `spec.suspend` |
+
+Validate without a cluster:
+
+```bash
+./killswitch validate --config config.example.yaml
 ```
 
 ---
@@ -103,11 +153,14 @@ flux:
 
 ### `killswitch status`
 
-Displays the live reconciliation status of all configured resources and the current global state (`SUSPENDED`, `RESTORED`, or `PARTIAL`).
+Displays the live status of every switch and, for the Flux switch, the configured resources.
 
 ```bash
-# Human-readable table
+# Human-readable tables
 ./killswitch status
+
+# One switch only
+./killswitch status --switch navidrome
 
 # Machine-readable JSON output
 ./killswitch status --json
@@ -121,9 +174,21 @@ Output highlights:
 
 ---
 
+### `killswitch <switch-id> on|off`
+
+Turns any configured switch ON or OFF. OFF captures originals and applies the non-default state; ON restores the captured originals (or the configured fixed/default state).
+
+```bash
+./killswitch navidrome off --dry-run
+./killswitch navidrome off --yes
+./killswitch navidrome on --yes
+```
+
+`killswitch suspend` and `killswitch restore` remain aliases for `flux off` and `flux on`.
+
 ### `killswitch suspend`
 
-Freezes all configured resources by setting `spec.suspend: true`.
+Freezes all configured Flux resources by setting `spec.suspend: true`.
 
 ```bash
 # 1. Preview changes without modifying the cluster
@@ -169,6 +234,9 @@ Inspects past operations recorded in the write-ahead journal (`journal.jsonl`).
 # Show last 10 operations
 ./killswitch history --limit 10
 
+# Filter by switch
+./killswitch history --switch navidrome --limit 10
+
 # Output full history as JSON
 ./killswitch history --json
 ```
@@ -183,19 +251,20 @@ Launches the full interactive terminal UI powered by Bubble Tea:
 ./killswitch tui
 ```
 
-The main screen is a k9s-style table of switches. The Flux reconciliation switch is always listed first.
+The main screen is a k9s-style table loaded from `switches.yaml`. The Flux reconciliation switch is the main control: it is always pinned to the top (even if declared later in the file) and rendered in the accent color. Switches may set an optional `icon` (for example `★` for Flux or `☁` for a tunnel switch); icons render in a fixed-width slot so names stay aligned, and unset icons leave that slot blank.
 
 Each panel title is a breadcrumb of your current location, e.g. `Flux Controls › Flux Reconciliation › Properties`, so you always know which level of the UI you are in.
 
-The `SWITCH` column is the control position: `● ON` when reconciliation is active and `○ OFF` only when every reachable target is fully suspended. The `CLUSTER` column shows the observed aggregate (`RESTORED`, `SUSPENDED`, `MIXED`, `DRIFT`, `MISSING`) so an inconsistent cluster never masquerades as a switch position.
+The `SWITCH` column is the live position of each switch (`ON`, `OFF`, `MIXED`, `DRIFT`, `MISSING`, `UNKNOWN`) derived from observing every step. For the Flux switch, the `CLUSTER` column additionally shows the aggregate (`RESTORED`, `SUSPENDED`, `MIXED`, `DRIFT`, `MISSING`). The properties view lists workflow steps with their observed and original values.
 
 **Keybindings:**
-- `↑` / `↓` (or `k` / `j`) — Select a switch (scroll resources in properties; scroll operations in history)
+- `↑` / `↓` (or `k` / `j`) — Select a switch (or scroll resources, the YAML view, and operations in history)
 - `Enter` — Open the selected switch's properties and list all Flux resources
-- `Esc` — Return from the properties or history view to the previous screen
-- `Ctrl+T` (or `t` / `Space`) — Toggle the selected switch and open the confirmation dialog
+- `y` (in properties) — Show the selected switch's effective YAML; scroll with `↑`/`↓`, `g`/`G`, or `PgUp`/`PgDn`, `Esc` to go back
+- `Esc` — Return from the properties, YAML, or history view to the previous screen
+- `Ctrl+T` (or `t` / `Space`) — Toggle the selected switch; a "building switch plan" dialog appears immediately, then the confirmation dialog once the plan is ready
 - `h` — Open the operation history recorded in `journal.jsonl`
-- `y` / `Enter` — Confirm the pending change
+- `y` / `Enter` (in the confirmation dialog) — Confirm the pending change
 - `f` — Confirm with force override when the plan shows conflicts
 - `n` / `Esc` — Cancel the pending change
 - `r` / `u` — Refresh live cluster status (and history)
@@ -211,7 +280,7 @@ The following flags apply to all subcommands:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--config <path>` | `config.yaml` | Path to target resources configuration YAML |
+| `--config <path>` | `switches.yaml` | Path to the config directory or switches YAML file |
 | `--context <name>` | Current context | Target Kubernetes context |
 | `--kubeconfig <path>` | `~/.kube/config` | Path to kubeconfig file |
 | `--timeout <duration>` | `60s` | Operation timeout per API request |
@@ -227,7 +296,7 @@ Kill Switch follows strict exit code semantics for reliable automation:
 | Code | Meaning | Cause |
 |---|---|---|
 | `0` | Success | Operation completed and verified |
-| `1` | Partial failure | One or more resources failed patching or read-back verification |
+| `1` | Partial failure | One or more workflow steps failed patching or read-back verification |
 | `2` | Config / Connection error | Invalid YAML, unreachable cluster, or missing target resource |
 | `3` | Conflict | Resource was modified outside Kill Switch; requires `--force` |
 | `4` | Unsafe state / Lock contention | Concurrent run active or incomplete state without recorded originals |
@@ -236,13 +305,15 @@ Kill Switch follows strict exit code semantics for reliable automation:
 
 ## Safety & Architecture
 
-### Dependency Ordering
+### Workflow Ordering
 
-To prevent reconciliation deadlocks:
-1. **Suspend Order**: Kustomizations (reverse config order) -> HelmReleases (reverse config order).
-2. **Restore Order**: HelmReleases (forward config order) -> Kustomizations (forward config order).
+Workflow steps run in declaration order for ON and in reverse order for OFF. The example Flux workflow declares HelmReleases forward then Kustomizations forward, so OFF runs Kustomizations in reverse and then HelmReleases in reverse, and ON restores HelmReleases before Kustomizations. This prevents Kustomizations with `wait: true` from timing out on suspended Helm releases.
 
-Restoring HelmReleases *before* Kustomizations ensures that Kustomizations with `wait: true` or health checks do not time out waiting for dependent Helm charts that have not yet been unsuspended.
+A workflow may declare `requires: {flux: suspended}` or `{flux: active}`. Turning a dependent OFF (capturing originals and applying its non-default state) auto-toggles Flux to the required state first, so scaling a Flux-managed workload down is not immediately reconciled back. Turning the dependent back ON leaves Flux as-is. Toggling Flux never touches dependent switches; Flux reconciliation remains the source of truth for workloads. The whole prerequisite cascade is journaled as one operation.
+
+### Action Handlers
+
+Every step is executed by a Go handler with a `Validate → Observe → Capture → Plan → Apply → Verify → Restore` lifecycle. Originals are typed per action (bool for suspend flags, int for replicas) and stored in journal v2 events (`switch`, `workflow`, `step`, `direction`, `original`, `desired`, `observed`, `phase`). v1 journals still replay.
 
 ### Write-Ahead Log (`journal.jsonl`)
 

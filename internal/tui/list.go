@@ -5,6 +5,15 @@ import (
 	"github.com/rykhalskyi/killswitch/internal/engine"
 )
 
+// switchIconWidth is the fixed slot reserved for a switch's optional icon so
+// rows stay aligned whether or not an icon is configured.
+const switchIconWidth = 2
+
+// switchNameText builds the name column with a fixed-width icon slot.
+func switchNameText(marker, icon, name string) string {
+	return marker + fitVisible(icon, switchIconWidth) + " " + name
+}
+
 func (m Model) renderList(bodyHeight int) string {
 	usable := m.contentWidth()
 	widths := allocWidths(usable-3, []int{32, 37, 15, 16})
@@ -14,25 +23,38 @@ func (m Model) renderList(bodyHeight int) string {
 		cell("CLUSTER", widths[2]) + " " +
 		cellRight("SWITCH", widths[3])
 
-	sw := m.switchState()
-	clusterLabel, clusterStyle := m.clusterState()
+	clusterLabel, _ := m.clusterState()
+	defs := m.switchDefs()
 
-	rows := make([]string, 0, len(switchDefs))
-	for i, def := range switchDefs {
+	rows := make([]string, 0, len(defs))
+	for i, def := range defs {
 		marker := "  "
 		if i == m.cursor {
 			marker = "▸ "
 		}
+		sw := m.switchStateAt(i)
+		isFlux := def.id == m.fluxSwitchID()
+		rowCluster, clusterStyle := clusterLabel, dimStyle
+		if isFlux {
+			rowCluster, clusterStyle = m.clusterState()
+		} else {
+			rowCluster = "-"
+		}
 
-		name := cell(marker+def.name, widths[0])
+		nameText := switchNameText(marker, def.icon, def.name)
+		nameStyleFor := nameStyle
+		if isFlux {
+			nameStyleFor = fluxNameStyle
+		}
+		name := cell(nameText, widths[0])
 		desc := cell(def.description, widths[1])
-		cluster := cell(clusterLabel, widths[2])
+		cluster := cell(rowCluster, widths[2])
 		state := cellRight(sw.label, widths[3])
 
 		if i == m.cursor {
 			rows = append(rows, selectedRowStyle.Render(name+" "+desc+" "+cluster+" "+state))
 		} else {
-			rows = append(rows, nameStyle.Render(name)+" "+dimStyle.Render(desc)+" "+clusterStyle.Render(cluster)+" "+sw.style.Render(state))
+			rows = append(rows, nameStyleFor.Render(name)+" "+dimStyle.Render(desc)+" "+clusterStyle.Render(cluster)+" "+sw.style.Render(state))
 		}
 	}
 
@@ -129,12 +151,70 @@ func (m Model) clusterState() (string, lipgloss.Style) {
 }
 
 func (m Model) nextAction() (engine.Action, bool) {
-	st := m.switchState()
-	if !st.known {
+	_, dir, ok := m.nextTransition()
+	if !ok {
 		return "", false
 	}
-	if st.on {
-		return engine.ActionSuspend, true
+	return engine.LegacyAction(dir), true
+}
+
+func (m Model) nextTransition() (string, engine.Direction, bool) {
+	defs := m.switchDefs()
+	idx := m.cursor
+	if idx < 0 || idx >= len(defs) {
+		return "", "", false
 	}
-	return engine.ActionRestore, true
+	st := m.switchStateAt(idx)
+	if !st.known {
+		return "", "", false
+	}
+	dir := engine.DirectionOn
+	if st.on {
+		dir = engine.DirectionOff
+	}
+	return defs[idx].id, dir, true
+}
+
+func (m Model) fluxSwitchID() string {
+	if m.eng != nil {
+		if id := m.eng.FluxSwitchID(); id != "" {
+			return id
+		}
+	}
+	return "flux"
+}
+
+// switchStateAt derives the position of one switch row.
+func (m Model) switchStateAt(idx int) switchState {
+	defs := m.switchDefs()
+	if idx < 0 || idx >= len(defs) || m.status == nil {
+		return switchState{label: "… LOADING", style: dimStyle}
+	}
+	def := defs[idx]
+	for _, st := range m.status.Switches {
+		if st.ID == def.id {
+			return mapSwitchState(st.State)
+		}
+	}
+	if def.id == m.fluxSwitchID() && len(m.status.Resources) > 0 {
+		return m.switchState()
+	}
+	return switchState{label: "? UNKNOWN", style: dimStyle}
+}
+
+func mapSwitchState(st engine.SwitchState) switchState {
+	switch st {
+	case engine.SwitchOn:
+		return switchState{label: "● ON", style: onStyle, on: true, known: true}
+	case engine.SwitchOff:
+		return switchState{label: "○ OFF", style: offStyle, known: true}
+	case engine.SwitchMixed:
+		return switchState{label: "◐ MIXED", style: mixedStyle, known: true}
+	case engine.SwitchDrift:
+		return switchState{label: "⚠ DRIFT", style: mixedStyle, known: true}
+	case engine.SwitchMissing:
+		return switchState{label: "✕ MISSING", style: errorStyle, known: true}
+	default:
+		return switchState{label: "? UNKNOWN", style: dimStyle}
+	}
 }

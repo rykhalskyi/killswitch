@@ -1,17 +1,22 @@
-flux:
-  resources:
-    - { kind: Kustomization, namespace: flux-system, name: flux-system }
-    - { kind: Kustomization, namespace: flux-system, name: infrastructure }
-    - { kind: Kustomization, namespace: flux-system, name: cert-manager-config }
-    - { kind: Kustomization, namespace: flux-system, name: apps }
-    - { kind: HelmRelease, namespace: local-path-storage, name: local-path-provisioner }
-    - { kind: HelmRelease, namespace: traefik, name: traefik }
-    - { kind: HelmRelease, namespace: monitoring, name: kube-prometheus-stack }
-    - { kind: HelmRelease, namespace: cnpg-system, name: cloudnative-pg }
-    - { kind: HelmRelease, namespace: metrics-server, name: metrics-server }
-    - { kind: HelmRelease, namespace: keda, name: keda }
-    - { kind: HelmRelease, namespace: cert-manager, name: cert-manager }
-    - { kind: HelmRelease, namespace: nextcloud, name: nextcloud }
-    - { kind: HelmRelease, namespace: homepage, name: homepage }
-    - { kind: HelmRelease, namespace: transcributed, name: transcributed }
-    - { kind: HelmRelease, namespace: langfuse, name: langfuse }
+switches:
+  - id: flux
+    name: Flux Reconciliation
+    description: Suspend or resume Flux reconciliation
+    icon: ★
+    workflow: flux
+
+  - id: navidrome
+    name: Navidrome
+    description: Scale the Navidrome music server to zero (auto-suspends Flux)
+    workflow: navidrome
+
+  - id: pullini
+    name: Pullini
+    description: Scale Pullini to zero (auto-suspends Flux)
+    workflow: pullini
+
+  - id: cloudflared
+    name: Cloudflared
+    description: Scale Cloudflared to zero and close the tunnel (auto-suspends Flux)
+    icon: 🌐
+    workflow: cloudflared

@@ -166,3 +166,38 @@ func TestCorruptStateRecovery(t *testing.T) {
 		t.Errorf("expected completed op success, got %+v", st.LastCompletedOp)
 	}
 }
+
+func TestLoadLegacyActiveOperationInitializesStepStates(t *testing.T) {
+	dir := t.TempDir()
+	legacy := `{
+  "lastSeq": 1,
+  "activeOp": {
+    "op": "01OLD",
+    "action": "suspend",
+    "context": "talos",
+    "startedAt": "2026-11-01T00:00:00Z",
+    "targets": 1,
+    "resourceStates": {}
+  },
+  "originalSuspended": {"Kustomization/flux-system/apps": false}
+}`
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(legacy), 0600); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+	st, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	st.ApplyEvent(&journal.Event{
+		Seq: 2, Event: journal.EventResourceIntent, Action: "flux.suspend",
+		Switch: "flux", Workflow: "flux", Step: "apps", Direction: "off",
+		Kind: "Kustomization", Namespace: "flux-system", Name: "apps",
+		Original: true, Desired: true,
+	})
+	if _, ok := st.ActiveOp.StepStates["flux/apps"]; !ok {
+		t.Fatalf("legacy state was not upgraded: %+v", st.ActiveOp.StepStates)
+	}
+	if _, ok := st.OriginalValues["flux/apps"]; !ok {
+		t.Fatalf("typed original was not recorded")
+	}
+}

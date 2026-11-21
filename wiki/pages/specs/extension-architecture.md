@@ -138,7 +138,7 @@ Resolved decisions: [D-12…D-17](../../decisions.md).
 | Missing original on ON | Refuse with exit 4 unless `states.on.default` is configured | first-run restores may need a default |
 | Resume/partial failure | Resume unfinished steps; never recapture | manual follow-up on partial failure |
 | Mid-workflow failure | Stop by default; per-workflow `on_error: rollback` opt-in | rollback must itself be journaled and resumable |
-| Prerequisites | Two-way interlock: enabling a dependent auto-satisfies the prerequisite; moving the prerequisite out of that state runs dependent OFF workflows first | cascades change other switches and can be destructive; always previewed |
+| Prerequisites | One-way interlock: turning a dependent OFF auto-satisfies the prerequisite; toggling the prerequisite never cascades into dependents | prerequisite changes have global effect, so they must stay explicit; always previewed |
 | Cascade failure | Continue the prerequisite transition; Flux reconciles dependents; journal the failure and surface MIXED/DRIFT | assumes the dependent's target state is represented in Git/Flux |
 | Irreversible actions | Require `reversible: false`; `script.run` also needs `undo` to be restorable | some actions can never be restored |
 | Verification | Optional `Verify`; unverifiable steps render `UNVERIFIED` | not all infrastructure is observable |
@@ -147,34 +147,32 @@ Resolved decisions: [D-12…D-17](../../decisions.md).
 | Locking | Keep one global lock for now | long workflows block other switches |
 | Secrets | Environment or external credential helper only | extra setup for SSH/network handlers |
 
-### Dependency interlock semantics (D-15, D-17)
+### Dependency interlock semantics (D-15, D-18, D-19)
 
 `requires` is declared on the workflow (`requires: {flux: suspended|active|any}`) and creates a switch-level interlock.
 
-Forward direction — enabling a dependent:
+Turning a dependent OFF:
 
-- A dependent switch may be ON only while the prerequisite switch is in the required state (`flux: suspended` means the Flux switch is OFF).
-- Turning the dependent ON first transitions the prerequisite if needed, journaling it in the same operation, then runs the dependent's steps.
-- Prerequisites are not auto-reverted: turning the dependent OFF leaves Flux as-is.
+- A dependent switch may be OFF (non-default state) only while the prerequisite switch is in the required state (`flux: suspended` means the Flux switch is OFF).
+- Turning the dependent OFF first transitions the prerequisite if needed, journaling it in the same operation, then runs the dependent's steps.
+- Prerequisites are not auto-reverted: turning the dependent back ON leaves Flux as-is.
 
-Reverse direction — moving the prerequisite:
+Toggling the prerequisite:
 
-- Turning the prerequisite out of the required state (Flux OFF → ON) first runs the OFF workflow of every currently-ON dependent that requires the state being left (e.g. `flux: suspended` when Flux turns ON), in `switches.yaml` order, then resumes Flux.
-- This makes the interlock two-way: reconciliation cannot resume while a dependent is still in its manual state.
-- If a dependent's OFF workflow fails, the Flux transition still proceeds. The failure is journaled and the switch shows MIXED/DRIFT; Flux reconciliation is expected to converge the dependent. This assumes the dependent's target state is represented in Git/Flux; otherwise it can remain inconsistent.
-- If the prerequisite transition (Flux ON) itself fails, the operation aborts.
+- Turning Flux ON never modifies dependent switches. Flux reconciliation is the source of truth: dependents that killswitch scaled down are reconciled back to their Git-defined state, and dependents that were never touched are left alone.
+- A dependent is never scaled down as a side effect of resuming Flux, because doing so would clobber unrelated workloads.
+- If the prerequisite transition fails, the operation aborts.
 
 Shared rules:
 
 - The whole cascade is one operation with per-switch and per-step phases. Recovery resumes unfinished cascade steps in the same direction and never recaptures originals.
 - Dry-run and the confirmation modal list the primary transition and every cascaded transition before execution.
-- An out-of-band prerequisite change cannot trigger a cascade; `status` reports the dependency violation and the user can run the repair.
 - Cycles are rejected at config validation.
 - Phase 3 implements the Flux special case only (one level); generic `depends_on` graphs land in Phase 6.
 
 ## Phased delivery
 
-- **Phase 3** — adopt the layered config and canonical states schema; introduce the handler registry and typed originals/journal v2; implement `kubernetes.scale`; port Flux to `flux.suspend`/`flux.resume`; implement the Flux dependency interlock in both directions (dependent ON suspends Flux; Flux ON runs dependent OFF workflows first); stop on the first failed primary step. Multi-step workflows allowed sequentially; the `on_error: rollback` policy, generic `depends_on`, and multi-switch ordering land in Phase 6.
+- **Phase 3** — adopt the layered config and canonical states schema; introduce the handler registry and typed originals/journal v2; implement `kubernetes.scale`; port Flux to `flux.suspend`/`flux.resume`; implement the one-way Flux dependency interlock (dependent OFF suspends Flux; toggling Flux leaves dependents alone); stop on the first failed primary step. Multi-step workflows allowed sequentially; the `on_error: rollback` policy, generic `depends_on`, and multi-switch ordering land in Phase 6.
 - **Phase 4** — node handlers (cordon/drain/reboot) and SSH/WoL transport.
 - **Phase 5** — `network.policy` and `script.run` with explicit `undo` and a script trust model.
 - **Phase 6** — orchestration: `depends_on`, multi-switch prerequisite ordering, rollback policies, richer resume.

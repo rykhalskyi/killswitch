@@ -16,3 +16,10 @@
 ## [2026-11-17] update | tickets/t3-phase3-workload-controls.md — scope aligned with gap decisions
 ## [2026-11-17] update | specs/extension-architecture.md — two-way dependency interlock documented (D-17)
 ## [2026-11-17] update | tickets/t3-phase3-workload-controls.md — forward and reverse cascade added to scope
+## [2026-11-20] update | t3-phase3-workload-controls.md — status changed to implemented
+## [2026-11-20] update | README.md, manual.md, config.example.yaml — Phase 3 layered config and on/off commands documented
+## [2026-11-21] update | interlock now suspends Flux on dependent OFF; plan dialog opens immediately with planning state
+## [2026-11-21] fix | flux restore no longer cascades into dependent switches
+## [2026-11-21] feat | TUI properties view: y opens a scrollable effective YAML view
+## [2026-11-21] feat | switches.yaml icon field renders configurable TUI markers in a fixed-width slot
+## [2026-11-21] feat | cloudflared switch added; release version 0.3.0

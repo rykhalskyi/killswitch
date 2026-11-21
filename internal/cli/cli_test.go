@@ -166,3 +166,46 @@ func TestFormatGlobalStatus(t *testing.T) {
 		t.Error("expected non-empty string for GlobalStatusUnknown")
 	}
 }
+
+func TestExtractSwitchID(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		id   string
+		rest []string
+	}{
+		{"switch first", []string{"media", "--dry-run"}, "media", []string{"--dry-run"}},
+		{"switch last", []string{"--yes", "media"}, "media", []string{"--yes"}},
+		{"flag value skipped", []string{"--state-dir", "/tmp/x", "media", "--yes"}, "media", []string{"--state-dir", "/tmp/x", "--yes"}},
+		{"equals value", []string{"--config=cfg.yaml", "media"}, "media", []string{"--config=cfg.yaml"}},
+		{"no switch", []string{"--dry-run"}, "", []string{"--dry-run"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, rest := extractSwitchID(tt.args)
+			if id != tt.id {
+				t.Fatalf("id = %q, want %q", id, tt.id)
+			}
+			if len(rest) != len(tt.rest) {
+				t.Fatalf("rest = %v, want %v", rest, tt.rest)
+			}
+			for i := range rest {
+				if rest[i] != tt.rest[i] {
+					t.Fatalf("rest[%d] = %q, want %q", i, rest[i], tt.rest[i])
+				}
+			}
+		})
+	}
+}
+
+func TestParseOnOffCommands(t *testing.T) {
+	for _, cmd := range []string{"on", "off", "validate"} {
+		parsed, args := parseCommand([]string{"killswitch", "media", cmd, "--dry-run"})
+		if parsed != cmd {
+			t.Fatalf("parseCommand cmd = %q, want %q", parsed, cmd)
+		}
+		if len(args) != 2 || args[0] != "media" || args[1] != "--dry-run" {
+			t.Fatalf("args = %v", args)
+		}
+	}
+}

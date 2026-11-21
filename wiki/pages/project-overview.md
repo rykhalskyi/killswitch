@@ -61,7 +61,7 @@ State lives under `$XDG_STATE_HOME/killswitch/` (`journal.jsonl`, `state.json`),
 6. **Phase 6 — Workflow orchestration** (high, needs Phases 3–5)
 7. **Phase 7 — Polish and distribution** (high, ongoing)
 
-Phases 1–2 are implemented; see [T2](tickets/t2-phase2-safety-recovery.md). The TUI also ships a breadcrumb path and a confirm dialog composited over the dimmed table. Phase 3 is planned in [T3](tickets/t3-phase3-workload-controls.md) against the [extension architecture spec](specs/extension-architecture.md), which defines the switches → workflows → action-handler layering for Phases 3–6.
+Phases 1–3 are implemented; see [T2](tickets/t2-phase2-safety-recovery.md) and [T3](tickets/t3-phase3-workload-controls.md). The TUI also ships a breadcrumb path and a confirm dialog composited over the dimmed table. Phase 3 adopts the switches → workflows → action-handler layering from the [extension architecture spec](specs/extension-architecture.md), with `flux.suspend`/`flux.resume`, `kubernetes.scale`, and the optional `kubernetes.suspend` handler. Phase 4 (node management) is next.
 
 ## Key concepts
 

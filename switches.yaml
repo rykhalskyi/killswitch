@@ -1,0 +1,22 @@
+switches:
+  - id: flux
+    name: Flux Reconciliation
+    description: Suspend or resume Flux reconciliation
+    icon: ★
+    workflow: flux
+
+  - id: navidrome
+    name: Navidrome
+    description: Scale the Navidrome music server to zero (auto-suspends Flux)
+    workflow: navidrome
+
+  - id: pullini
+    name: Pullini
+    description: Scale Pullini to zero (auto-suspends Flux)
+    workflow: pullini
+
+  - id: cloudflared
+    name: Cloudflared
+    description: Scale Cloudflared to zero and close the tunnel (auto-suspends Flux)
+    icon: 🌐
+    workflow: cloudflared

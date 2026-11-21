@@ -4,7 +4,21 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/rykhalskyi/killswitch/internal/engine"
 )
+
+func (m Model) pendingTransition() (string, engine.Direction) {
+	if m.pendingSwitch != "" {
+		return m.pendingSwitch, m.pendingDir
+	}
+	sw := m.selectedSwitch()
+	dir := engine.DirectionOn
+	if m.pendingAction == engine.ActionSuspend {
+		dir = engine.DirectionOff
+	}
+	return sw.id, dir
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -29,6 +43,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case planMsg:
+		m.planning = false
 		if msg.err != nil {
 			m.errorMessage = fmt.Sprintf("Error building plan: %v", msg.err)
 			m.confirmOpen = false
@@ -36,6 +51,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pendingPlan = msg.plan
 		m.pendingAction = msg.action
+		m.pendingSwitch = msg.switchID
+		m.pendingDir = msg.direction
 		m.pendingForce = false
 		m.confirmOpen = true
 		return m, nil
@@ -56,9 +73,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case progressMsg:
+		m.execStep = msg.step
+		m.execTotal = msg.total
 		if msg.err != nil {
+			m.execFailed++
 			m.execProgress = fmt.Sprintf("[%d/%d] %s (FAILED: %v)", msg.step, msg.total, msg.res.Name, msg.err)
 		} else {
+			m.execOK++
 			m.execProgress = fmt.Sprintf("[%d/%d] %s (OK)", msg.step, msg.total, msg.res.Name)
 		}
 		return m, waitForProgress(m.msgChan)
@@ -69,6 +90,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.confirmOpen = false
 		m.pendingPlan = nil
 		m.pendingForce = false
+		m.planning = false
+		m.execProgress = ""
 		if msg.err != nil {
 			m.errorMessage = fmt.Sprintf("Execution error: %v", msg.err)
 			m.infoMessage = ""
@@ -86,18 +109,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.planning {
+			// The plan request is already in flight; ignore further input so
+			// repeated Ctrl+T presses cannot stack dialogs.
+			if msg.String() == "ctrl+c" || msg.String() == "q" {
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+
 		if m.confirmOpen {
 			switch msg.String() {
 			case "y", "Y", "enter":
 				m.confirmOpen = false
-				return m, m.startExecution(m.pendingAction, false)
+				switchID, dir := m.pendingTransition()
+				return m, m.startExecution(switchID, dir, false)
 			case "f", "F":
 				if m.pendingPlan == nil || len(m.pendingPlan.Conflicts) == 0 {
 					return m, nil
 				}
 				m.confirmOpen = false
 				m.pendingForce = true
-				return m, m.startExecution(m.pendingAction, true)
+				switchID, dir := m.pendingTransition()
+				return m, m.startExecution(switchID, dir, true)
 			case "n", "N", "esc", "q":
 				m.confirmOpen = false
 				m.pendingPlan = nil
@@ -112,17 +146,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "ctrl+t", "t", " ":
-			if m.view == viewHistory {
+			if m.view == viewHistory || m.view == viewYAML {
 				return m, nil
 			}
-			action, ok := m.nextAction()
+			switchID, dir, ok := m.nextTransition()
 			if !ok {
 				m.errorMessage = "Status not loaded yet"
 				return m, nil
 			}
 			m.errorMessage = ""
 			m.infoMessage = ""
-			return m, m.fetchPlanCmd(action)
+			m.planning = true
+			m.planSwitch = switchID
+			m.planDir = dir
+			return m, m.fetchPlanCmd(switchID, dir, engine.LegacyAction(dir))
 
 		case "r", "u":
 			if m.view == viewHistory {
@@ -140,6 +177,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errorMessage = ""
 			return m, m.fetchHistoryCmd()
 
+		case "y", "Y":
+			if m.view == viewDetail {
+				m.openSwitchYAML()
+			}
+			return m, nil
+
 		case "up", "k":
 			switch m.view {
 			case viewHistory:
@@ -149,6 +192,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case viewDetail:
 				if m.detailCursor > 0 {
 					m.detailCursor--
+				}
+			case viewYAML:
+				if m.yamlScroll > 0 {
+					m.yamlScroll--
 				}
 			default:
 				if m.cursor > 0 {
@@ -171,9 +218,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.detailCursor < max {
 					m.detailCursor++
 				}
+			case viewYAML:
+				if m.yamlScroll < len(m.yamlLines)-1 {
+					m.yamlScroll++
+				}
 			default:
-				if m.cursor < len(switchDefs)-1 {
+				if m.cursor < len(m.switchDefs())-1 {
 					m.cursor++
+				}
+			}
+			return m, nil
+
+		case "g":
+			if m.view == viewYAML {
+				m.yamlScroll = 0
+			}
+			return m, nil
+
+		case "G":
+			if m.view == viewYAML && len(m.yamlLines) > 0 {
+				m.yamlScroll = len(m.yamlLines) - 1
+			}
+			return m, nil
+
+		case "pgup":
+			if m.view == viewYAML {
+				m.yamlScroll -= 10
+				if m.yamlScroll < 0 {
+					m.yamlScroll = 0
+				}
+			}
+			return m, nil
+
+		case "pgdown":
+			if m.view == viewYAML {
+				m.yamlScroll += 10
+				if m.yamlScroll > len(m.yamlLines)-1 {
+					m.yamlScroll = len(m.yamlLines) - 1
+				}
+				if m.yamlScroll < 0 {
+					m.yamlScroll = 0
 				}
 			}
 			return m, nil
@@ -191,6 +275,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.view = m.historyReturn
 			case viewDetail:
 				m.view = viewList
+			case viewYAML:
+				m.view = viewDetail
 			}
 			return m, nil
 		}

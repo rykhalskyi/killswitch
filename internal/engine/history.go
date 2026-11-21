@@ -11,6 +11,8 @@ import (
 type HistoryItem struct {
 	Op         string `json:"op"`
 	Action     string `json:"action"`
+	Switch     string `json:"switch,omitempty"`
+	Direction  string `json:"direction,omitempty"`
 	Context    string `json:"context"`
 	StartedAt  string `json:"startedAt"`
 	EndedAt    string `json:"endedAt,omitempty"`
@@ -71,6 +73,8 @@ func (e *Engine) History(limit int) ([]HistoryItem, error) {
 			item := HistoryItem{
 				Op:        opID,
 				Action:    col.start.Action,
+				Switch:    col.start.Switch,
+				Direction: col.start.Direction,
 				Context:   col.start.Context,
 				StartedAt: col.start.TS,
 				Targets:   col.start.Targets,
@@ -97,6 +101,8 @@ func (e *Engine) History(limit int) ([]HistoryItem, error) {
 			item := HistoryItem{
 				Op:        opID,
 				Action:    firstConf.Action,
+				Switch:    firstConf.Switch,
+				Direction: firstConf.Direction,
 				Context:   firstConf.Context,
 				StartedAt: firstConf.TS,
 				EndedAt:   firstConf.TS,

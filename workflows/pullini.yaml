@@ -1,0 +1,16 @@
+id: pullini
+name: Pullini
+requires:
+  flux: suspended
+
+# Pullini is reconciled by Flux's "apps" Kustomization, which pins
+# replicas: 1. The Phase 3 interlock suspends Flux before scaling it down and
+# keeps Flux paused while this switch is ON. The CNPG database and scheduled
+# backups are intentionally left running.
+steps:
+  - id: pullini
+    action: kubernetes.scale
+    target: {kind: Deployment, namespace: pullini, name: pullini}
+    states:
+      off: {replicas: 0}
+      on: {restore: previous, default: 1}

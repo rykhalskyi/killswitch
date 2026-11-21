@@ -142,6 +142,12 @@ func TestViewDimensions(t *testing.T) {
 		checkDimensions(t, m, fmt.Sprintf("confirm %dx%d", w, h))
 
 		m.confirmOpen = false
+		m.planning = true
+		m.planSwitch = "pullini"
+		m.planDir = engine.DirectionOff
+		checkDimensions(t, m, fmt.Sprintf("planning %dx%d", w, h))
+
+		m.planning = false
 		m.executing = true
 		m.execProgress = "[3/20] resource-03 (OK)"
 		checkDimensions(t, m, fmt.Sprintf("progress %dx%d", w, h))
@@ -173,6 +179,134 @@ func TestConfirmOverlayKeepsBackground(t *testing.T) {
 		t.Fatalf("expected switch name in the background table, got:\n%s", view)
 	}
 	checkDimensions(t, m, "confirm overlay")
+}
+
+func TestPlanningOverlayShowsImmediately(t *testing.T) {
+	m := NewModel(nil)
+	m.width, m.height = 100, 30
+	m.status = sampleStatus(15)
+	m.cursor = 2
+	m.planning = true
+	m.planSwitch = "pullini"
+	m.planDir = engine.DirectionOff
+
+	view := m.View()
+	if got := strings.Count(view, "BUILDING SWITCH PLAN"); got != 1 {
+		t.Fatalf("expected one planning dialog, got %d:\n%s", got, view)
+	}
+	if !strings.Contains(view, "DESCRIPTION") {
+		t.Fatalf("expected switch table to remain visible behind the dialog, got:\n%s", view)
+	}
+	checkDimensions(t, m, "planning overlay")
+}
+
+func TestProgressOverlayKeepsBackground(t *testing.T) {
+	m := NewModel(nil)
+	m.width, m.height = 100, 30
+	m.status = sampleStatus(15)
+	m.executing = true
+	m.pendingAction = engine.ActionSuspend
+	m.execStep = 3
+	m.execTotal = 16
+	m.execOK = 3
+	m.execProgress = "[3/16] Kustomization/apps (OK)"
+
+	view := m.View()
+	if got := strings.Count(view, "EXECUTING SUSPEND"); got != 1 {
+		t.Fatalf("expected one progress dialog, got %d:\n%s", got, view)
+	}
+	if !strings.Contains(view, "DESCRIPTION") {
+		t.Fatalf("expected switch table to remain visible behind the dialog, got:\n%s", view)
+	}
+	checkDimensions(t, m, "progress overlay")
+}
+
+func TestToggleShowsPlanDialogImmediately(t *testing.T) {
+	m := NewModel(nil)
+	m.width, m.height = 100, 30
+	m.status = statusFromStates(false, false)
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	m = next.(Model)
+	if cmd == nil || !m.planning || m.confirmOpen {
+		t.Fatalf("toggle should start planning, got cmd=%v planning=%v confirm=%v", cmd != nil, m.planning, m.confirmOpen)
+	}
+	if view := m.View(); !strings.Contains(view, "BUILDING SWITCH PLAN") {
+		t.Fatalf("planning dialog should appear before the plan arrives:\n%s", view)
+	}
+
+	next, _ = m.Update(planMsg{
+		action: engine.ActionSuspend, switchID: "flux",
+		direction: engine.DirectionOff, plan: samplePlan(2),
+	})
+	m = next.(Model)
+	if m.planning || !m.confirmOpen {
+		t.Fatalf("plan should replace planning with the confirm dialog, got planning=%v confirm=%v", m.planning, m.confirmOpen)
+	}
+}
+
+func TestSwitchYAMLView(t *testing.T) {
+	cfg := &config.Config{
+		Switches: []config.Switch{{
+			ID: "navidrome", Name: "Navidrome", Description: "Music server", Icon: "♪", Workflow: "navidrome",
+		}},
+		Workflows: map[string]*config.Workflow{
+			"navidrome": {
+				ID:       "navidrome",
+				Name:     "Navidrome",
+				Requires: config.Requires{Flux: config.RequiresSuspended},
+				Steps: []config.Step{{
+					ID:     "navidrome",
+					Action: config.ActionKubeScale,
+					Target: config.Resource{Kind: config.KindDeployment, Namespace: "navidrome", Name: "navidrome"},
+					States: config.StepStates{
+						Off: config.StateValues{"replicas": 0},
+						On:  config.StateValues{"restore": "previous", "default": 1},
+					},
+				}},
+			},
+		},
+	}
+	eng := engine.New(cfg, nil, t.TempDir(), "test", nil)
+	m := NewModel(eng)
+	m.width, m.height = 100, 30
+	m.status = statusFromStates(false, false)
+	m.view = viewDetail
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m = next.(Model)
+	if m.view != viewYAML {
+		t.Fatalf("y should open the YAML view, got view=%v", m.view)
+	}
+	view := m.View()
+	for _, want := range []string{"id: navidrome", "icon: ♪", "flux: suspended", "kind: Deployment"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected YAML view to contain %q:\n%s", want, view)
+		}
+	}
+	if !strings.Contains(view, "YAML") {
+		t.Fatalf("expected YAML breadcrumb, got:\n%s", view)
+	}
+	checkDimensions(t, m, "switch yaml")
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = next.(Model)
+	if m.yamlScroll != 1 {
+		t.Fatalf("j should scroll the YAML view, got %d", m.yamlScroll)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = next.(Model)
+	if m.yamlScroll != len(m.yamlLines)-1 {
+		t.Fatalf("G should jump to the end, got %d of %d", m.yamlScroll, len(m.yamlLines))
+	}
+	if view := m.View(); !strings.Contains(view, "replicas: 0") {
+		t.Fatalf("expected the end of the YAML to be reachable:\n%s", view)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(Model)
+	if m.view != viewDetail {
+		t.Fatalf("esc should return to properties, got view=%v", m.view)
+	}
 }
 
 func TestHistoryView(t *testing.T) {
@@ -381,6 +515,44 @@ func TestNextAction(t *testing.T) {
 	m.status = statusFromStates(true, false)
 	if action, ok := m.nextAction(); !ok || action != engine.ActionSuspend {
 		t.Fatalf("mixed cluster should suspend, got %q ok=%v", action, ok)
+	}
+}
+
+func TestFluxSwitchPinnedFirst(t *testing.T) {
+	cfg := &config.Config{
+		Switches: []config.Switch{
+			{ID: "navidrome", Name: "Navidrome", Workflow: "navidrome"},
+			{ID: "flux", Name: "Flux Reconciliation", Icon: "★", Workflow: "flux"},
+		},
+		Workflows: map[string]*config.Workflow{
+			"flux":      {ID: "flux", Name: "Flux"},
+			"navidrome": {ID: "navidrome", Name: "Navidrome"},
+		},
+	}
+	eng := engine.New(cfg, nil, t.TempDir(), "test", nil)
+	m := NewModel(eng)
+	m.width, m.height = 100, 30
+	m.status = statusFromStates(false, false)
+
+	defs := m.switchDefs()
+	if len(defs) != 2 || defs[0].id != "flux" {
+		t.Fatalf("flux switch should be pinned first, got %+v", defs)
+	}
+	view := m.View()
+	if !strings.Contains(view, "★  Flux Reconciliation") {
+		t.Fatalf("expected the configured flux icon, got:\n%s", view)
+	}
+	checkDimensions(t, m, "pinned flux")
+}
+
+func TestSwitchIconSlotAlignment(t *testing.T) {
+	withIcon := switchNameText("  ", "★", "Navidrome")
+	withoutIcon := switchNameText("  ", "", "Navidrome")
+	if lipgloss.Width(withIcon) != lipgloss.Width(withoutIcon) {
+		t.Fatalf("icon slot must keep names aligned: %q vs %q", withIcon, withoutIcon)
+	}
+	if strings.Contains(withoutIcon, "★") {
+		t.Fatalf("unset icon must leave a blank slot, got %q", withoutIcon)
 	}
 }
 
