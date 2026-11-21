@@ -31,12 +31,14 @@ switches:
   - id: navidrome
     name: Navidrome
     description: Scale the Navidrome music server to zero (auto-suspends Flux)
+    icon: ♪                # optional TUI marker
     workflow: navidrome
 ```
 
 Rules:
 - `id` is unique, lowercase, and is what the CLI accepts (`killswitch navidrome off`).
 - `name` is the TUI label.
+- `icon` is optional; it renders in a fixed-width slot, so rows stay aligned and unset icons leave blank space.
 - `workflow` is the workflow file's `id`, normally the same slug.
 
 ## 3. Create `workflows/<id>.yaml`

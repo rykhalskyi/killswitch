@@ -43,6 +43,7 @@ switches:
   - id: flux
     name: Flux Reconciliation
     description: Suspend or resume Flux reconciliation
+    icon: ★
     workflow: flux
   - id: navidrome
     name: Navidrome
@@ -64,6 +65,8 @@ steps:
       off: {replicas: 0}
       on: {restore: previous, default: 1}
 ```
+
+`icon` is optional; it renders in a fixed-width slot in the TUI, leaving blank space when unset.
 
 Steps run in declaration order for ON and in reverse order for OFF. `requires.flux` accepts `suspended`, `active`, or `any` and creates a one-way Flux interlock (a dependent may suspend Flux before scaling down).
 

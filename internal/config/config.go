@@ -54,6 +54,7 @@ type Switch struct {
 	ID          string `yaml:"id" json:"id"`
 	Name        string `yaml:"name" json:"name"`
 	Description string `yaml:"description" json:"description"`
+	Icon        string `yaml:"icon,omitempty" json:"icon,omitempty"`
 	Workflow    string `yaml:"workflow" json:"workflow"`
 }
 
@@ -303,6 +304,9 @@ func (c *Config) Validate() error {
 		}
 		if sw.Name == "" {
 			return fmt.Errorf("switch %q name cannot be empty", sw.ID)
+		}
+		if strings.ContainsAny(sw.Icon, "\n\r\t") {
+			return fmt.Errorf("switch %q icon must be a single-line symbol", sw.ID)
 		}
 		if sw.Workflow == "" {
 			return fmt.Errorf("switch %q workflow cannot be empty", sw.ID)

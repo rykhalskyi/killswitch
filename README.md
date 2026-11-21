@@ -96,6 +96,7 @@ switches:
   - id: flux
     name: Flux Reconciliation
     description: Suspend or resume Flux reconciliation
+    icon: ★
     workflow: flux
 
   - id: navidrome
@@ -103,6 +104,8 @@ switches:
     description: Scale the Navidrome music server to zero (auto-suspends Flux)
     workflow: navidrome
 ```
+
+`icon` is optional. It is rendered in a fixed-width slot in the TUI so names stay aligned; switches without an icon simply leave that slot blank.
 
 `workflows/navidrome.yaml`:
 
@@ -241,7 +244,7 @@ Launches the full interactive terminal UI powered by Bubble Tea:
 ./killswitch tui
 ```
 
-The main screen is a k9s-style table loaded from `switches.yaml`. The Flux reconciliation switch is the main control: it is always pinned to the top (even if declared later in the file) and marked with `★` in the accent color.
+The main screen is a k9s-style table loaded from `switches.yaml`. The Flux reconciliation switch is the main control: it is always pinned to the top (even if declared later in the file) and rendered in the accent color. Switches may set an optional `icon` (for example `★` for Flux or `☁` for a tunnel switch); icons render in a fixed-width slot so names stay aligned, and unset icons leave that slot blank.
 
 Each panel title is a breadcrumb of your current location, e.g. `Flux Controls › Flux Reconciliation › Properties`, so you always know which level of the UI you are in.
 

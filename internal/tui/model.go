@@ -23,6 +23,7 @@ type switchDef struct {
 	id          string
 	name        string
 	description string
+	icon        string
 	workflow    string
 }
 
@@ -31,6 +32,7 @@ var defaultSwitchDefs = []switchDef{
 		id:          "flux",
 		name:        "Flux Reconciliation",
 		description: "Suspend / restore all configured Flux Kustomizations and HelmReleases",
+		icon:        "★",
 		workflow:    "flux",
 	},
 }
@@ -119,6 +121,7 @@ func NewModel(eng *engine.Engine) Model {
 				id:          sw.ID,
 				name:        sw.Name,
 				description: sw.Description,
+				icon:        sw.Icon,
 				workflow:    sw.Workflow,
 			})
 		}

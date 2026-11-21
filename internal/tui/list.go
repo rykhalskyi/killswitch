@@ -5,6 +5,15 @@ import (
 	"github.com/rykhalskyi/killswitch/internal/engine"
 )
 
+// switchIconWidth is the fixed slot reserved for a switch's optional icon so
+// rows stay aligned whether or not an icon is configured.
+const switchIconWidth = 2
+
+// switchNameText builds the name column with a fixed-width icon slot.
+func switchNameText(marker, icon, name string) string {
+	return marker + fitVisible(icon, switchIconWidth) + " " + name
+}
+
 func (m Model) renderList(bodyHeight int) string {
 	usable := m.contentWidth()
 	widths := allocWidths(usable-3, []int{32, 37, 15, 16})
@@ -32,10 +41,9 @@ func (m Model) renderList(bodyHeight int) string {
 			rowCluster = "-"
 		}
 
-		nameText := marker + def.name
+		nameText := switchNameText(marker, def.icon, def.name)
 		nameStyleFor := nameStyle
 		if isFlux {
-			nameText = marker + "★ " + def.name
 			nameStyleFor = fluxNameStyle
 		}
 		name := cell(nameText, widths[0])

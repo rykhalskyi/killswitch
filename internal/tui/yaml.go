@@ -15,6 +15,7 @@ type switchYAMLDoc struct {
 	ID          string           `yaml:"id"`
 	Name        string           `yaml:"name"`
 	Description string           `yaml:"description,omitempty"`
+	Icon        string           `yaml:"icon,omitempty"`
 	Workflow    string           `yaml:"workflow"`
 	Requires    *config.Requires `yaml:"requires,omitempty"`
 	Steps       []config.Step    `yaml:"steps,omitempty"`
@@ -34,6 +35,7 @@ func (m Model) switchYAMLLines(def switchDef) []string {
 		ID:          def.id,
 		Name:        def.name,
 		Description: def.description,
+		Icon:        def.icon,
 		Workflow:    def.workflow,
 	}
 	if m.eng != nil {

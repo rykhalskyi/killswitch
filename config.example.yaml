@@ -2,6 +2,7 @@ switches:
   - id: flux
     name: Flux Reconciliation
     description: Suspend or resume Flux reconciliation
+    icon: ★
     workflow: flux
 
   - id: navidrome

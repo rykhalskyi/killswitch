@@ -21,3 +21,4 @@
 ## [2026-11-21] update | interlock now suspends Flux on dependent OFF; plan dialog opens immediately with planning state
 ## [2026-11-21] fix | flux restore no longer cascades into dependent switches
 ## [2026-11-21] feat | TUI properties view: y opens a scrollable effective YAML view
+## [2026-11-21] feat | switches.yaml icon field renders configurable TUI markers in a fixed-width slot
