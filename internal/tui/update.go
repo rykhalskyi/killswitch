@@ -146,7 +146,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "ctrl+t", "t", " ":
-			if m.view == viewHistory {
+			if m.view == viewHistory || m.view == viewYAML {
 				return m, nil
 			}
 			switchID, dir, ok := m.nextTransition()
@@ -177,6 +177,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errorMessage = ""
 			return m, m.fetchHistoryCmd()
 
+		case "y", "Y":
+			if m.view == viewDetail {
+				m.openSwitchYAML()
+			}
+			return m, nil
+
 		case "up", "k":
 			switch m.view {
 			case viewHistory:
@@ -186,6 +192,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case viewDetail:
 				if m.detailCursor > 0 {
 					m.detailCursor--
+				}
+			case viewYAML:
+				if m.yamlScroll > 0 {
+					m.yamlScroll--
 				}
 			default:
 				if m.cursor > 0 {
@@ -208,9 +218,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.detailCursor < max {
 					m.detailCursor++
 				}
+			case viewYAML:
+				if m.yamlScroll < len(m.yamlLines)-1 {
+					m.yamlScroll++
+				}
 			default:
 				if m.cursor < len(m.switchDefs())-1 {
 					m.cursor++
+				}
+			}
+			return m, nil
+
+		case "g":
+			if m.view == viewYAML {
+				m.yamlScroll = 0
+			}
+			return m, nil
+
+		case "G":
+			if m.view == viewYAML && len(m.yamlLines) > 0 {
+				m.yamlScroll = len(m.yamlLines) - 1
+			}
+			return m, nil
+
+		case "pgup":
+			if m.view == viewYAML {
+				m.yamlScroll -= 10
+				if m.yamlScroll < 0 {
+					m.yamlScroll = 0
+				}
+			}
+			return m, nil
+
+		case "pgdown":
+			if m.view == viewYAML {
+				m.yamlScroll += 10
+				if m.yamlScroll > len(m.yamlLines)-1 {
+					m.yamlScroll = len(m.yamlLines) - 1
+				}
+				if m.yamlScroll < 0 {
+					m.yamlScroll = 0
 				}
 			}
 			return m, nil
@@ -228,6 +275,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.view = m.historyReturn
 			case viewDetail:
 				m.view = viewList
+			case viewYAML:
+				m.view = viewDetail
 			}
 			return m, nil
 		}

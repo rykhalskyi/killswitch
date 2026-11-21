@@ -59,6 +59,12 @@ var (
 	nameStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F9FAFB"))
 
+	// The Flux reconciliation switch is the main control, so its row is
+	// visually distinct from workload switches.
+	fluxNameStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(accent)
+
 	dimStyle = lipgloss.NewStyle().
 			Foreground(muted)
 

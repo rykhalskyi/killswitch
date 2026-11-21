@@ -15,6 +15,7 @@ const (
 	viewList viewMode = iota
 	viewDetail
 	viewHistory
+	viewYAML
 )
 
 // switchDef describes one top-level switch in the main table.
@@ -81,6 +82,10 @@ type Model struct {
 	detailCursor  int
 	historyCursor int
 
+	// switch YAML
+	yamlLines  []string
+	yamlScroll int
+
 	// history
 	history []engine.HistoryItem
 
@@ -118,7 +123,30 @@ func NewModel(eng *engine.Engine) Model {
 			})
 		}
 	}
+	m.switches = fluxFirst(m.switches, m.fluxSwitchID())
 	return m
+}
+
+// fluxFirst pins the main reconciliation switch to the top of the table
+// regardless of its declaration order in switches.yaml.
+func fluxFirst(defs []switchDef, fluxID string) []switchDef {
+	if fluxID == "" {
+		return defs
+	}
+	for i, def := range defs {
+		if def.id != fluxID {
+			continue
+		}
+		if i == 0 {
+			return defs
+		}
+		out := make([]switchDef, 0, len(defs))
+		out = append(out, def)
+		out = append(out, defs[:i]...)
+		out = append(out, defs[i+1:]...)
+		return out
+	}
+	return defs
 }
 
 // switchDefs returns configured switches, falling back to the Flux default.

@@ -29,6 +29,8 @@ func (m Model) View() string {
 		body = m.renderDetail(bodyHeight)
 	case m.view == viewHistory:
 		body = m.renderHistory(bodyHeight)
+	case m.view == viewYAML:
+		body = m.renderYAML(bodyHeight)
 	default:
 		body = m.renderList(bodyHeight)
 	}

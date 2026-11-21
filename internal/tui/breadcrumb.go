@@ -19,6 +19,11 @@ func (m Model) breadcrumb() string {
 			}
 		}
 		parts = append(parts, "Operation History")
+	case viewYAML:
+		if name := m.switchName(m.cursor); name != "" {
+			parts = append(parts, name)
+		}
+		parts = append(parts, "YAML")
 	}
 	return strings.Join(parts, " › ")
 }

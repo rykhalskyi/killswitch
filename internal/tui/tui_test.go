@@ -245,6 +245,70 @@ func TestToggleShowsPlanDialogImmediately(t *testing.T) {
 	}
 }
 
+func TestSwitchYAMLView(t *testing.T) {
+	cfg := &config.Config{
+		Switches: []config.Switch{{
+			ID: "navidrome", Name: "Navidrome", Description: "Music server", Workflow: "navidrome",
+		}},
+		Workflows: map[string]*config.Workflow{
+			"navidrome": {
+				ID:       "navidrome",
+				Name:     "Navidrome",
+				Requires: config.Requires{Flux: config.RequiresSuspended},
+				Steps: []config.Step{{
+					ID:     "navidrome",
+					Action: config.ActionKubeScale,
+					Target: config.Resource{Kind: config.KindDeployment, Namespace: "navidrome", Name: "navidrome"},
+					States: config.StepStates{
+						Off: config.StateValues{"replicas": 0},
+						On:  config.StateValues{"restore": "previous", "default": 1},
+					},
+				}},
+			},
+		},
+	}
+	eng := engine.New(cfg, nil, t.TempDir(), "test", nil)
+	m := NewModel(eng)
+	m.width, m.height = 100, 30
+	m.status = statusFromStates(false, false)
+	m.view = viewDetail
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m = next.(Model)
+	if m.view != viewYAML {
+		t.Fatalf("y should open the YAML view, got view=%v", m.view)
+	}
+	view := m.View()
+	for _, want := range []string{"id: navidrome", "flux: suspended", "kind: Deployment"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected YAML view to contain %q:\n%s", want, view)
+		}
+	}
+	if !strings.Contains(view, "YAML") {
+		t.Fatalf("expected YAML breadcrumb, got:\n%s", view)
+	}
+	checkDimensions(t, m, "switch yaml")
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = next.(Model)
+	if m.yamlScroll != 1 {
+		t.Fatalf("j should scroll the YAML view, got %d", m.yamlScroll)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = next.(Model)
+	if m.yamlScroll != len(m.yamlLines)-1 {
+		t.Fatalf("G should jump to the end, got %d of %d", m.yamlScroll, len(m.yamlLines))
+	}
+	if view := m.View(); !strings.Contains(view, "replicas: 0") {
+		t.Fatalf("expected the end of the YAML to be reachable:\n%s", view)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(Model)
+	if m.view != viewDetail {
+		t.Fatalf("esc should return to properties, got view=%v", m.view)
+	}
+}
+
 func TestHistoryView(t *testing.T) {
 	m := NewModel(nil)
 	m.width, m.height = 100, 24
@@ -452,6 +516,33 @@ func TestNextAction(t *testing.T) {
 	if action, ok := m.nextAction(); !ok || action != engine.ActionSuspend {
 		t.Fatalf("mixed cluster should suspend, got %q ok=%v", action, ok)
 	}
+}
+
+func TestFluxSwitchPinnedFirst(t *testing.T) {
+	cfg := &config.Config{
+		Switches: []config.Switch{
+			{ID: "navidrome", Name: "Navidrome", Workflow: "navidrome"},
+			{ID: "flux", Name: "Flux Reconciliation", Workflow: "flux"},
+		},
+		Workflows: map[string]*config.Workflow{
+			"flux":      {ID: "flux", Name: "Flux"},
+			"navidrome": {ID: "navidrome", Name: "Navidrome"},
+		},
+	}
+	eng := engine.New(cfg, nil, t.TempDir(), "test", nil)
+	m := NewModel(eng)
+	m.width, m.height = 100, 30
+	m.status = statusFromStates(false, false)
+
+	defs := m.switchDefs()
+	if len(defs) != 2 || defs[0].id != "flux" {
+		t.Fatalf("flux switch should be pinned first, got %+v", defs)
+	}
+	view := m.View()
+	if !strings.Contains(view, "★ Flux Reconciliation") {
+		t.Fatalf("expected a distinct flux row, got:\n%s", view)
+	}
+	checkDimensions(t, m, "pinned flux")
 }
 
 func TestSwitchPosition(t *testing.T) {

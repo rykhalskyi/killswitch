@@ -241,19 +241,20 @@ Launches the full interactive terminal UI powered by Bubble Tea:
 ./killswitch tui
 ```
 
-The main screen is a k9s-style table loaded from `switches.yaml`. The Flux reconciliation switch is listed first when configured.
+The main screen is a k9s-style table loaded from `switches.yaml`. The Flux reconciliation switch is the main control: it is always pinned to the top (even if declared later in the file) and marked with `★` in the accent color.
 
 Each panel title is a breadcrumb of your current location, e.g. `Flux Controls › Flux Reconciliation › Properties`, so you always know which level of the UI you are in.
 
 The `SWITCH` column is the live position of each switch (`ON`, `OFF`, `MIXED`, `DRIFT`, `MISSING`, `UNKNOWN`) derived from observing every step. For the Flux switch, the `CLUSTER` column additionally shows the aggregate (`RESTORED`, `SUSPENDED`, `MIXED`, `DRIFT`, `MISSING`). The properties view lists workflow steps with their observed and original values.
 
 **Keybindings:**
-- `↑` / `↓` (or `k` / `j`) — Select a switch (scroll resources in properties; scroll operations in history)
+- `↑` / `↓` (or `k` / `j`) — Select a switch (or scroll resources, the YAML view, and operations in history)
 - `Enter` — Open the selected switch's properties and list all Flux resources
-- `Esc` — Return from the properties or history view to the previous screen
+- `y` (in properties) — Show the selected switch's effective YAML; scroll with `↑`/`↓`, `g`/`G`, or `PgUp`/`PgDn`, `Esc` to go back
+- `Esc` — Return from the properties, YAML, or history view to the previous screen
 - `Ctrl+T` (or `t` / `Space`) — Toggle the selected switch; a "building switch plan" dialog appears immediately, then the confirmation dialog once the plan is ready
 - `h` — Open the operation history recorded in `journal.jsonl`
-- `y` / `Enter` — Confirm the pending change
+- `y` / `Enter` (in the confirmation dialog) — Confirm the pending change
 - `f` — Confirm with force override when the plan shows conflicts
 - `n` / `Esc` — Cancel the pending change
 - `r` / `u` — Refresh live cluster status (and history)

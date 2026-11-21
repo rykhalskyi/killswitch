@@ -24,14 +24,21 @@ func (m Model) renderList(bodyHeight int) string {
 			marker = "▸ "
 		}
 		sw := m.switchStateAt(i)
+		isFlux := def.id == m.fluxSwitchID()
 		rowCluster, clusterStyle := clusterLabel, dimStyle
-		if def.id == m.fluxSwitchID() {
+		if isFlux {
 			rowCluster, clusterStyle = m.clusterState()
 		} else {
 			rowCluster = "-"
 		}
 
-		name := cell(marker+def.name, widths[0])
+		nameText := marker + def.name
+		nameStyleFor := nameStyle
+		if isFlux {
+			nameText = marker + "★ " + def.name
+			nameStyleFor = fluxNameStyle
+		}
+		name := cell(nameText, widths[0])
 		desc := cell(def.description, widths[1])
 		cluster := cell(rowCluster, widths[2])
 		state := cellRight(sw.label, widths[3])
@@ -39,7 +46,7 @@ func (m Model) renderList(bodyHeight int) string {
 		if i == m.cursor {
 			rows = append(rows, selectedRowStyle.Render(name+" "+desc+" "+cluster+" "+state))
 		} else {
-			rows = append(rows, nameStyle.Render(name)+" "+dimStyle.Render(desc)+" "+clusterStyle.Render(cluster)+" "+sw.style.Render(state))
+			rows = append(rows, nameStyleFor.Render(name)+" "+dimStyle.Render(desc)+" "+clusterStyle.Render(cluster)+" "+sw.style.Render(state))
 		}
 	}
 

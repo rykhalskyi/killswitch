@@ -183,12 +183,13 @@ The switch list is loaded from `switches.yaml`. The panel title is a breadcrumb 
 The confirmation dialog is composited over the dimmed switch table, so the underlying view stays visible while the pending change is reviewed.
 
 Keybindings:
-- `↑` / `↓` (or `k` / `j`) — Select a switch, scroll properties, or scroll history
+- `↑` / `↓` (or `k` / `j`) — Select a switch, or scroll properties, the YAML view, and history
 - `Enter` — Open the selected switch's properties
-- `Esc` — Return from properties or history to the previous screen
+- `y` (in properties) — Show the selected switch's effective YAML; scroll with `↑`/`↓`, `g`/`G`, or `PgUp`/`PgDn`, `Esc` to go back
+- `Esc` — Return from properties, YAML, or history to the previous screen
 - `Ctrl+T` (or `t` / `Space`) — Toggle the selected switch; a "building switch plan" dialog appears immediately, then the confirmation modal once the plan is ready
 - `h` — Open the operation history view
-- `y` / `Enter` — Confirm the pending change
+- `y` / `Enter` (in the confirmation dialog) — Confirm the pending change
 - `f` — Confirm with force override when the plan shows conflicts
 - `n` / `Esc` — Cancel the pending change
 - `r` / `u` — Refresh live status (and history)
