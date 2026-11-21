@@ -4,7 +4,7 @@
 
 Phases 1–2 implement a **Level 2 Flux Freeze**: suspending and restoring configured Flux `Kustomization` and `HelmRelease` resources with strict dependency ordering, write-ahead JSON journaling, atomic crash recovery, and both CLI and interactive TUI interfaces.
 
-Phase 3 adds layered `switches.yaml` + `workflows/*.yaml` configuration, a Go action-handler registry (`flux.suspend`/`flux.resume`, `kubernetes.scale`, optional `kubernetes.suspend`), typed journal v2 originals, and a two-way Flux dependency interlock.
+Phase 3 adds layered `switches.yaml` + `workflows/*.yaml` configuration, a Go action-handler registry (`flux.suspend`/`flux.resume`, `kubernetes.scale`, optional `kubernetes.suspend`), typed journal v2 originals, and a Flux dependency interlock that suspends reconciliation before scaling a dependent down.
 
 ---
 
@@ -298,7 +298,7 @@ Kill Switch follows strict exit code semantics for reliable automation:
 
 Workflow steps run in declaration order for ON and in reverse order for OFF. The example Flux workflow declares HelmReleases forward then Kustomizations forward, so OFF runs Kustomizations in reverse and then HelmReleases in reverse, and ON restores HelmReleases before Kustomizations. This prevents Kustomizations with `wait: true` from timing out on suspended Helm releases.
 
-A workflow may declare `requires: {flux: suspended}` or `{flux: active}`. Turning a dependent OFF (capturing originals and applying its non-default state) auto-toggles Flux to the required state first, so scaling a Flux-managed workload down is not immediately reconciled back. Turning the dependent back ON leaves Flux as-is. Turning Flux ON runs the OFF workflow of every currently-ON dependent first. The whole cascade is journaled as one operation. A failed dependent OFF is journaled but does not block Flux; the switch surfaces `MIXED`/`DRIFT`.
+A workflow may declare `requires: {flux: suspended}` or `{flux: active}`. Turning a dependent OFF (capturing originals and applying its non-default state) auto-toggles Flux to the required state first, so scaling a Flux-managed workload down is not immediately reconciled back. Turning the dependent back ON leaves Flux as-is. Toggling Flux never touches dependent switches; Flux reconciliation remains the source of truth for workloads. The whole prerequisite cascade is journaled as one operation.
 
 ### Action Handlers
 

@@ -65,7 +65,7 @@ steps:
       on: {restore: previous, default: 1}
 ```
 
-Steps run in declaration order for ON and in reverse order for OFF. `requires.flux` accepts `suspended`, `active`, or `any` and creates a two-way Flux interlock.
+Steps run in declaration order for ON and in reverse order for OFF. `requires.flux` accepts `suspended`, `active`, or `any` and creates a one-way Flux interlock (a dependent may suspend Flux before scaling down).
 
 Supported actions in Phase 3:
 - `flux.suspend` / `flux.resume` on `Kustomization` and `HelmRelease` (captures `spec.suspend`).
@@ -95,7 +95,7 @@ killswitch navidrome off --yes
 killswitch navidrome on --yes
 ```
 
-OFF captures the original state for every step (replicas or suspend flags) before applying the non-default state. ON restores those originals, or applies a fixed/default value when no original exists. If a workflow requires Flux suspended, turning it OFF first suspends Flux in the same operation; turning it back ON leaves Flux as-is. Turning Flux ON first runs the OFF workflow of every currently-ON dependent in `switches.yaml` order, then resumes reconciliation.
+OFF captures the original state for every step (replicas or suspend flags) before applying the non-default state. ON restores those originals, or applies a fixed/default value when no original exists. If a workflow requires Flux suspended, turning it OFF first suspends Flux in the same operation; turning it back ON leaves Flux as-is. Toggling Flux never modifies dependent switches; Flux reconciliation is the source of truth for workload state.
 
 `killswitch suspend` and `killswitch restore` remain aliases for the Flux switch (`flux off` / `flux on`).
 

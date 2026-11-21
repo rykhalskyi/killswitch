@@ -19,3 +19,4 @@
 ## [2026-11-20] update | t3-phase3-workload-controls.md — status changed to implemented
 ## [2026-11-20] update | README.md, manual.md, config.example.yaml — Phase 3 layered config and on/off commands documented
 ## [2026-11-21] update | interlock now suspends Flux on dependent OFF; plan dialog opens immediately with planning state
+## [2026-11-21] fix | flux restore no longer cascades into dependent switches

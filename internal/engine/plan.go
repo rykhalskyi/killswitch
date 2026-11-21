@@ -62,7 +62,7 @@ func (e *Engine) BuildSwitchPlan(ctx context.Context, switchID string, dir Direc
 }
 
 // addSwitchSegment prepends prerequisite transitions and appends the segment's
-// own steps. Reverse cascades are prepended so they run before the primary.
+// own steps. Prerequisites run before the primary transition.
 func (e *Engine) addSwitchSegment(ctx context.Context, plan *Plan, sw *config.Switch, wf *config.Workflow, dir Direction, cascade, continueOnError bool, seen map[string]bool) error {
 	key := sw.ID + "/" + string(dir)
 	if seen[key] {
@@ -89,27 +89,6 @@ func (e *Engine) addSwitchSegment(ctx context.Context, plan *Plan, sw *config.Sw
 				if err := e.addSwitchSegment(ctx, plan, reqSw, reqWf, reqDir, true, false, seen); err != nil {
 					return err
 				}
-			}
-		}
-	}
-
-	// Reverse interlock: resuming Flux first runs OFF workflows for dependents.
-	if sw.ID == fluxID && dir == DirectionOn {
-		for i := range e.cfg.Switches {
-			dep := &e.cfg.Switches[i]
-			if dep.ID == sw.ID {
-				continue
-			}
-			depWf := e.cfg.Workflows[dep.Workflow]
-			if depWf == nil || depWf.Requires.Flux != config.RequiresSuspended {
-				continue
-			}
-			depState, _ := e.switchState(ctx, dep.ID)
-			if depState == SwitchOff || depState == SwitchMissing || depState == SwitchUnknown {
-				continue
-			}
-			if err := e.addSwitchSegment(ctx, plan, dep, depWf, DirectionOff, true, true, seen); err != nil {
-				return err
 			}
 		}
 	}

@@ -293,7 +293,7 @@ func TestPhase3RestoreDoesNotToggleFlux(t *testing.T) {
 	}
 }
 
-func TestPhase3ReverseInterlockRunsDependentOffFirst(t *testing.T) {
+func TestPhase3FluxRestoreLeavesDependentsAlone(t *testing.T) {
 	scale := newFakeScaleClient()
 	scale.replicas["Deployment/media/jellyfin"] = 2
 	scale.replicas["StatefulSet/media/sonarr"] = 1
@@ -306,29 +306,18 @@ func TestPhase3ReverseInterlockRunsDependentOffFirst(t *testing.T) {
 	if _, err := eng.ExecuteSwitch(ctx, "media", DirectionOn, false, nil); err != nil {
 		t.Fatalf("media on failed: %v", err)
 	}
-	if _, err := eng.ExecuteSwitch(ctx, fluxClientFluxID(eng), DirectionOn, false, nil); err != nil {
+	report, err := eng.ExecuteSwitch(ctx, fluxClientFluxID(eng), DirectionOn, false, nil)
+	if err != nil {
 		t.Fatalf("flux restore failed: %v", err)
+	}
+	if len(report.Results) != 1 {
+		t.Fatalf("flux restore should not cascade into dependents, got %d results", len(report.Results))
 	}
 	if fluxClient.resources["Kustomization/flux-system/apps"].Suspended {
 		t.Fatal("flux was not restored")
 	}
-	if scale.replicas["Deployment/media/jellyfin"] != 0 || scale.replicas["StatefulSet/media/sonarr"] != 0 {
-		t.Fatalf("dependent OFF workflow did not run before flux restore: %+v", scale.replicas)
-	}
-
-	events, err := journal.ReadAll(filepath.Join(eng.stateDir, "journal.jsonl"))
-	if err != nil {
-		t.Fatalf("read journal: %v", err)
-	}
-	firstStep := ""
-	for _, ev := range events {
-		if ev.Op == eng.State().LastCompletedOp.Op && ev.Event == journal.EventResourceIntent {
-			firstStep = ev.Switch
-			break
-		}
-	}
-	if firstStep != "media" {
-		t.Fatalf("expected dependent OFF steps before flux restore, first step switch=%q", firstStep)
+	if scale.replicas["Deployment/media/jellyfin"] != 2 || scale.replicas["StatefulSet/media/sonarr"] != 2 {
+		t.Fatalf("flux restore modified dependents: %+v", scale.replicas)
 	}
 }
 
@@ -371,32 +360,5 @@ func TestPhase3ScaleRestoresAfterRestart(t *testing.T) {
 	}
 	if scale.replicas["Deployment/media/jellyfin"] != 4 || scale.replicas["StatefulSet/media/sonarr"] != 2 {
 		t.Fatalf("originals were not restored after restart: %+v", scale.replicas)
-	}
-}
-
-func TestPhase3FailedDependentOffDoesNotBlockFlux(t *testing.T) {
-	scale := newFakeScaleClient()
-	scale.replicas["Deployment/media/jellyfin"] = 2
-	scale.replicas["StatefulSet/media/sonarr"] = 1
-	eng, fluxClient := newScaleEngine(t, scaleConfig(StateOn{"replicas": 2}), scale)
-	ctx := context.Background()
-
-	if _, err := eng.ExecuteSwitch(ctx, fluxClientFluxID(eng), DirectionOff, false, nil); err != nil {
-		t.Fatalf("flux suspend failed: %v", err)
-	}
-	if _, err := eng.ExecuteSwitch(ctx, "media", DirectionOn, false, nil); err != nil {
-		t.Fatalf("media on failed: %v", err)
-	}
-	scale.fail["Deployment/media/jellyfin"] = fmt.Errorf("scale backend down")
-
-	report, err := eng.ExecuteSwitch(ctx, fluxClientFluxID(eng), DirectionOn, false, nil)
-	if err != ErrPartialFailure {
-		t.Fatalf("expected partial failure, got %v", err)
-	}
-	if fluxClient.resources["Kustomization/flux-system/apps"].Suspended {
-		t.Fatal("flux must still resume after a failed dependent OFF")
-	}
-	if report.OK == 0 || report.Failed == 0 {
-		t.Fatalf("expected mixed results, got OK=%d Failed=%d", report.OK, report.Failed)
 	}
 }
