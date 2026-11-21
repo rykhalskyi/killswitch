@@ -45,7 +45,7 @@ Rules:
 
 Start from the closest example:
 - `workflows/navidrome.yaml` — one Deployment with a Flux prerequisite.
-- `workflows/pullini.yaml` — the same pattern for another Deployment.
+- `workflows/pullini.yaml` / `workflows/cloudflared.yaml` — the same pattern for other Deployments.
 - `workflows/flux.yaml` — the Flux reconciliation switch.
 
 ### Workload scaling template

@@ -84,7 +84,8 @@ config/
 └── workflows/
     ├── flux.yaml
     ├── navidrome.yaml
-    └── pullini.yaml
+    ├── pullini.yaml
+    └── cloudflared.yaml
 ```
 
 ### Example Configuration
@@ -103,6 +104,12 @@ switches:
     name: Navidrome
     description: Scale the Navidrome music server to zero (auto-suspends Flux)
     workflow: navidrome
+
+  - id: cloudflared
+    name: Cloudflared
+    description: Scale Cloudflared to zero and close the tunnel (auto-suspends Flux)
+    icon: 🌐
+    workflow: cloudflared
 ```
 
 `icon` is optional. It is rendered in a fixed-width slot in the TUI so names stay aligned; switches without an icon simply leave that slot blank.
@@ -124,7 +131,7 @@ steps:
       on: {restore: previous, default: 1}
 ```
 
-`workflows/pullini.yaml` follows the same pattern. See `workflows/flux.yaml` for the full Flux example. Steps run in order for ON and in reverse order for OFF.
+`workflows/pullini.yaml` and `workflows/cloudflared.yaml` follow the same pattern. See `workflows/flux.yaml` for the full Flux example. Steps run in order for ON and in reverse order for OFF.
 
 Supported actions in Phase 3:
 

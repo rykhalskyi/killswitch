@@ -1,0 +1,15 @@
+id: cloudflared
+name: Cloudflared
+requires:
+  flux: suspended
+
+# Cloudflared is reconciled by Flux's "apps" Kustomization, which pins
+# replicas: 1. The interlock suspends Flux before scaling it down and keeps
+# Flux paused while this switch is ON, so the tunnel stays closed.
+steps:
+  - id: cloudflared
+    action: kubernetes.scale
+    target: {kind: Deployment, namespace: cloudflared, name: cloudflared}
+    states:
+      off: {replicas: 0}
+      on: {restore: previous, default: 1}

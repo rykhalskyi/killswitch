@@ -49,6 +49,11 @@ switches:
     name: Navidrome
     description: Scale the Navidrome music server to zero (auto-suspends Flux)
     workflow: navidrome
+  - id: cloudflared
+    name: Cloudflared
+    description: Scale Cloudflared to zero and close the tunnel (auto-suspends Flux)
+    icon: 🌐
+    workflow: cloudflared
 ```
 
 ```yaml

@@ -22,3 +22,4 @@
 ## [2026-11-21] fix | flux restore no longer cascades into dependent switches
 ## [2026-11-21] feat | TUI properties view: y opens a scrollable effective YAML view
 ## [2026-11-21] feat | switches.yaml icon field renders configurable TUI markers in a fixed-width slot
+## [2026-11-21] feat | cloudflared switch added; release version 0.3.0
