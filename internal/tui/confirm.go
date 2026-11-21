@@ -7,15 +7,7 @@ import (
 	"github.com/rykhalskyi/killswitch/internal/engine"
 )
 
-func (m Model) renderProgress(bodyHeight int) string {
-	action := strings.ToUpper(string(m.pendingAction))
-	line := cell("⏳ "+m.execProgress, m.contentWidth())
-	return m.renderPanel("EXECUTING "+action, "in progress", "", []string{line}, bodyHeight)
-}
-
-func (m Model) renderConfirm(bodyHeight int) string {
-	plan := m.pendingPlan
-
+func (m Model) dialogWidth() int {
 	modalWidth := m.width * 3 / 4
 	if modalWidth > 84 {
 		modalWidth = 84
@@ -26,6 +18,13 @@ func (m Model) renderConfirm(bodyHeight int) string {
 	if modalWidth > m.width {
 		modalWidth = m.width
 	}
+	if modalWidth < 1 {
+		modalWidth = 1
+	}
+	return modalWidth
+}
+
+func (m Model) dialogContentWidth(modalWidth int) int {
 	contentW := modalWidth - 6
 	if contentW > m.width-6 {
 		contentW = m.width - 6
@@ -33,6 +32,78 @@ func (m Model) renderConfirm(bodyHeight int) string {
 	if contentW < 4 {
 		contentW = 4
 	}
+	return contentW
+}
+
+func (m Model) renderPlanning(bodyHeight int) string {
+	if bodyHeight < 6 {
+		return truncateText("Building switch plan...", m.width)
+	}
+	modalWidth := m.dialogWidth()
+	contentW := m.dialogContentWidth(modalWidth)
+
+	target := m.selectedSwitch().name
+	if m.planSwitch != "" {
+		target = m.planSwitch
+		for _, def := range m.switchDefs() {
+			if def.id == m.planSwitch {
+				target = def.name
+				break
+			}
+		}
+	}
+	dir := strings.ToUpper(string(m.planDir))
+	if dir == "" {
+		dir = "SWITCH"
+	}
+
+	lines := []string{
+		modalTitleStyle.Render(cell("BUILDING SWITCH PLAN", contentW)),
+		"",
+		cell(fmt.Sprintf("Preparing %s %s...", target, dir), contentW),
+		cell("Observing live cluster state", contentW),
+		"",
+		cell("[ctrl+c] quit", contentW),
+	}
+
+	return modalBox.Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderProgress(bodyHeight int) string {
+	action := strings.ToUpper(string(m.pendingAction))
+	if action == "" {
+		action = "SWITCH"
+	}
+	if bodyHeight < 6 {
+		return truncateText("Executing "+action+"...", m.width)
+	}
+
+	modalWidth := m.dialogWidth()
+	contentW := m.dialogContentWidth(modalWidth)
+
+	progress := m.execProgress
+	if progress == "" {
+		progress = "Starting..."
+	}
+	counter := fmt.Sprintf("Step %d/%d  ·  ok %d  ·  failed %d", m.execStep, m.execTotal, m.execOK, m.execFailed)
+
+	lines := []string{
+		modalTitleStyle.Render(cell("EXECUTING "+action, contentW)),
+		"",
+		cell(progress, contentW),
+		cell(counter, contentW),
+		"",
+		cell("[ctrl+c] quit", contentW),
+	}
+
+	return modalBox.Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderConfirm(bodyHeight int) string {
+	plan := m.pendingPlan
+
+	modalWidth := m.dialogWidth()
+	contentW := m.dialogContentWidth(modalWidth)
 	maxLines := bodyHeight - 4
 	if maxLines < 1 {
 		return truncateText("Confirm switch change? [y] yes / [n] no", m.width)

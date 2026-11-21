@@ -71,10 +71,13 @@ func (e *Engine) addSwitchSegment(ctx context.Context, plan *Plan, sw *config.Sw
 	seen[key] = true
 
 	fluxID := e.FluxSwitchID()
-	if dir == DirectionOn && wf.Requires.Flux != "" && wf.Requires.Flux != config.RequiresAny && fluxID != "" && fluxID != sw.ID {
-		reqDir := DirectionOn
-		if wf.Requires.Flux == config.RequiresSuspended {
-			reqDir = DirectionOff
+	// Prerequisites are enforced when a dependent enters its non-default (OFF)
+	// state: scaling a Flux-managed workload down must suspend Flux first or
+	// reconciliation immediately brings it back.
+	if dir == DirectionOff && wf.Requires.Flux != "" && wf.Requires.Flux != config.RequiresAny && fluxID != "" && fluxID != sw.ID {
+		reqDir := DirectionOff
+		if wf.Requires.Flux == config.RequiresActive {
+			reqDir = DirectionOn
 		}
 		stateNow, _ := e.switchState(ctx, fluxID)
 		need := (wf.Requires.Flux == config.RequiresSuspended && stateNow != SwitchOff) ||
@@ -191,7 +194,7 @@ func (e *Engine) buildSteps(ctx context.Context, sw *config.Switch, wf *config.W
 		}
 
 		item.WillChange = !handler.Equal(observed, desired)
-		e.fillLegacyFluxFields(ctx, &item, step, observed, original, desired)
+		e.fillLegacyFluxFields(&item, step, observed, original, desired)
 		items = append(items, item)
 	}
 
@@ -207,7 +210,7 @@ func boolPtrIf(h actions.Handler, v any) *bool {
 }
 
 // fillLegacyFluxFields keeps the Phase 1/2 Flux report fields populated.
-func (e *Engine) fillLegacyFluxFields(ctx context.Context, item *PlanItem, step config.Step, observed, original, desired any) {
+func (e *Engine) fillLegacyFluxFields(item *PlanItem, step config.Step, observed, original, desired any) {
 	if !strings.HasPrefix(step.Action, "flux.") {
 		return
 	}
@@ -219,11 +222,6 @@ func (e *Engine) fillLegacyFluxFields(ctx context.Context, item *PlanItem, step 
 	}
 	if v, ok := actions.Bool(original); ok {
 		item.Original = v
-	}
-	if e.fluxClient != nil {
-		if info, err := e.fluxClient.GetResource(ctx, step.Target.Kind, step.Target.Namespace, step.Target.Name); err == nil {
-			item.Info = info
-		}
 	}
 }
 
@@ -407,7 +405,7 @@ func (e *Engine) driftItem(ctx context.Context, switchID, workflowID string, ste
 		Conflict:       true,
 		ConflictReason: fmt.Sprintf("resource was modified outside killswitch: expected %v, observed %v", desired, observed),
 	}
-	e.fillLegacyFluxFields(ctx, &item, step, observed, nil, desired)
+	e.fillLegacyFluxFields(&item, step, observed, nil, desired)
 	item.ExpectedSuspended = boolPtrIf(handler, desired)
 	return &item, nil
 }

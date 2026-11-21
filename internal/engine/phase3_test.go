@@ -119,8 +119,8 @@ func TestPhase3ScaleOffCapturesAndOnRestores(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scale off failed: %v", err)
 	}
-	if report.OK != 2 {
-		t.Fatalf("expected 2 OK, got %d", report.OK)
+	if report.OK != 3 {
+		t.Fatalf("expected flux prerequisite + 2 OK, got %d", report.OK)
 	}
 	for key, r := range scale.replicas {
 		if r != 0 {
@@ -132,8 +132,8 @@ func TestPhase3ScaleOffCapturesAndOnRestores(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scale on failed: %v", err)
 	}
-	if report.OK != 3 {
-		t.Fatalf("expected flux prerequisite + 2 OK on restore, got %d", report.OK)
+	if report.OK != 2 {
+		t.Fatalf("expected 2 OK on restore, got %d", report.OK)
 	}
 	if scale.replicas["Deployment/media/jellyfin"] != 3 {
 		t.Errorf("jellyfin = %d, want restored 3", scale.replicas["Deployment/media/jellyfin"])
@@ -225,8 +225,17 @@ func TestPhase3ScaleResumeDoesNotRecapture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
-	if len(plan.Items) != 1 || plan.Items[0].Step != "sonarr" {
-		t.Fatalf("resume should only plan unfinished sonarr, got %+v", plan.Items)
+	var plannedSonarr, plannedJellyfin bool
+	for _, item := range plan.Items {
+		if item.Switch == "media" && item.Step == "sonarr" {
+			plannedSonarr = true
+		}
+		if item.Switch == "media" && item.Step == "jellyfin" {
+			plannedJellyfin = true
+		}
+	}
+	if !plannedSonarr || plannedJellyfin {
+		t.Fatalf("resume should only plan unfinished media step sonarr, got %+v", plan.Items)
 	}
 	if _, err := eng.ExecuteSwitch(ctx, "media", DirectionOff, false, nil); err != nil {
 		t.Fatalf("resume failed: %v", err)
@@ -246,9 +255,9 @@ func TestPhase3ForwardInterlockSuspendsFlux(t *testing.T) {
 	eng, fluxClient := newScaleEngine(t, scaleConfig(StateOn{"replicas": 2}), scale)
 	ctx := context.Background()
 
-	report, err := eng.ExecuteSwitch(ctx, "media", DirectionOn, false, nil)
+	report, err := eng.ExecuteSwitch(ctx, "media", DirectionOff, false, nil)
 	if err != nil {
-		t.Fatalf("media on failed: %v", err)
+		t.Fatalf("media off failed: %v", err)
 	}
 	if len(report.Results) != 3 {
 		t.Fatalf("expected flux suspend + 2 scale steps in one op, got %d", len(report.Results))
@@ -265,6 +274,25 @@ func TestPhase3ForwardInterlockSuspendsFlux(t *testing.T) {
 	}
 }
 
+func TestPhase3RestoreDoesNotToggleFlux(t *testing.T) {
+	scale := newFakeScaleClient()
+	scale.replicas["Deployment/media/jellyfin"] = 2
+	scale.replicas["StatefulSet/media/sonarr"] = 1
+	eng, fluxClient := newScaleEngine(t, scaleConfig(StateOn{"replicas": 2}), scale)
+	ctx := context.Background()
+
+	report, err := eng.ExecuteSwitch(ctx, "media", DirectionOn, false, nil)
+	if err != nil {
+		t.Fatalf("media on failed: %v", err)
+	}
+	if len(report.Results) != 2 {
+		t.Fatalf("restore should not cascade to flux, got %d results", len(report.Results))
+	}
+	if fluxClient.resources["Kustomization/flux-system/apps"].Suspended {
+		t.Fatal("flux must stay active when restoring a dependent")
+	}
+}
+
 func TestPhase3ReverseInterlockRunsDependentOffFirst(t *testing.T) {
 	scale := newFakeScaleClient()
 	scale.replicas["Deployment/media/jellyfin"] = 2
@@ -272,6 +300,9 @@ func TestPhase3ReverseInterlockRunsDependentOffFirst(t *testing.T) {
 	eng, fluxClient := newScaleEngine(t, scaleConfig(StateOn{"replicas": 2}), scale)
 	ctx := context.Background()
 
+	if _, err := eng.ExecuteSwitch(ctx, fluxClientFluxID(eng), DirectionOff, false, nil); err != nil {
+		t.Fatalf("flux suspend failed: %v", err)
+	}
 	if _, err := eng.ExecuteSwitch(ctx, "media", DirectionOn, false, nil); err != nil {
 		t.Fatalf("media on failed: %v", err)
 	}
@@ -350,6 +381,9 @@ func TestPhase3FailedDependentOffDoesNotBlockFlux(t *testing.T) {
 	eng, fluxClient := newScaleEngine(t, scaleConfig(StateOn{"replicas": 2}), scale)
 	ctx := context.Background()
 
+	if _, err := eng.ExecuteSwitch(ctx, fluxClientFluxID(eng), DirectionOff, false, nil); err != nil {
+		t.Fatalf("flux suspend failed: %v", err)
+	}
 	if _, err := eng.ExecuteSwitch(ctx, "media", DirectionOn, false, nil); err != nil {
 		t.Fatalf("media on failed: %v", err)
 	}

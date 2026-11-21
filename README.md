@@ -251,7 +251,7 @@ The `SWITCH` column is the live position of each switch (`ON`, `OFF`, `MIXED`, `
 - `↑` / `↓` (or `k` / `j`) — Select a switch (scroll resources in properties; scroll operations in history)
 - `Enter` — Open the selected switch's properties and list all Flux resources
 - `Esc` — Return from the properties or history view to the previous screen
-- `Ctrl+T` (or `t` / `Space`) — Toggle the selected switch and open the confirmation dialog
+- `Ctrl+T` (or `t` / `Space`) — Toggle the selected switch; a "building switch plan" dialog appears immediately, then the confirmation dialog once the plan is ready
 - `h` — Open the operation history recorded in `journal.jsonl`
 - `y` / `Enter` — Confirm the pending change
 - `f` — Confirm with force override when the plan shows conflicts
@@ -298,7 +298,7 @@ Kill Switch follows strict exit code semantics for reliable automation:
 
 Workflow steps run in declaration order for ON and in reverse order for OFF. The example Flux workflow declares HelmReleases forward then Kustomizations forward, so OFF runs Kustomizations in reverse and then HelmReleases in reverse, and ON restores HelmReleases before Kustomizations. This prevents Kustomizations with `wait: true` from timing out on suspended Helm releases.
 
-A workflow may declare `requires: {flux: suspended}` or `{flux: active}`. Turning a dependent ON auto-toggles Flux first; turning Flux ON runs the OFF workflow of every currently-ON dependent first. The whole cascade is journaled as one operation. A failed dependent OFF is journaled but does not block Flux; the switch surfaces `MIXED`/`DRIFT`.
+A workflow may declare `requires: {flux: suspended}` or `{flux: active}`. Turning a dependent OFF (capturing originals and applying its non-default state) auto-toggles Flux to the required state first, so scaling a Flux-managed workload down is not immediately reconciled back. Turning the dependent back ON leaves Flux as-is. Turning Flux ON runs the OFF workflow of every currently-ON dependent first. The whole cascade is journaled as one operation. A failed dependent OFF is journaled but does not block Flux; the switch surfaces `MIXED`/`DRIFT`.
 
 ### Action Handlers
 

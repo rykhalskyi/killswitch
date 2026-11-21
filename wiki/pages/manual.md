@@ -95,7 +95,7 @@ killswitch navidrome off --yes
 killswitch navidrome on --yes
 ```
 
-OFF captures the original state for every step (replicas or suspend flags) before applying the non-default state. ON restores those originals, or applies a fixed/default value when no original exists. If a workflow requires Flux suspended, turning it ON first suspends Flux in the same operation. Turning Flux ON first runs the OFF workflow of every currently-ON dependent in `switches.yaml` order, then resumes reconciliation.
+OFF captures the original state for every step (replicas or suspend flags) before applying the non-default state. ON restores those originals, or applies a fixed/default value when no original exists. If a workflow requires Flux suspended, turning it OFF first suspends Flux in the same operation; turning it back ON leaves Flux as-is. Turning Flux ON first runs the OFF workflow of every currently-ON dependent in `switches.yaml` order, then resumes reconciliation.
 
 `killswitch suspend` and `killswitch restore` remain aliases for the Flux switch (`flux off` / `flux on`).
 
@@ -186,7 +186,7 @@ Keybindings:
 - `↑` / `↓` (or `k` / `j`) — Select a switch, scroll properties, or scroll history
 - `Enter` — Open the selected switch's properties
 - `Esc` — Return from properties or history to the previous screen
-- `Ctrl+T` (or `t` / `Space`) — Toggle the selected switch and open the confirmation modal
+- `Ctrl+T` (or `t` / `Space`) — Toggle the selected switch; a "building switch plan" dialog appears immediately, then the confirmation modal once the plan is ready
 - `h` — Open the operation history view
 - `y` / `Enter` — Confirm the pending change
 - `f` — Confirm with force override when the plan shows conflicts

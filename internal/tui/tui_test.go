@@ -142,6 +142,12 @@ func TestViewDimensions(t *testing.T) {
 		checkDimensions(t, m, fmt.Sprintf("confirm %dx%d", w, h))
 
 		m.confirmOpen = false
+		m.planning = true
+		m.planSwitch = "pullini"
+		m.planDir = engine.DirectionOff
+		checkDimensions(t, m, fmt.Sprintf("planning %dx%d", w, h))
+
+		m.planning = false
 		m.executing = true
 		m.execProgress = "[3/20] resource-03 (OK)"
 		checkDimensions(t, m, fmt.Sprintf("progress %dx%d", w, h))
@@ -173,6 +179,70 @@ func TestConfirmOverlayKeepsBackground(t *testing.T) {
 		t.Fatalf("expected switch name in the background table, got:\n%s", view)
 	}
 	checkDimensions(t, m, "confirm overlay")
+}
+
+func TestPlanningOverlayShowsImmediately(t *testing.T) {
+	m := NewModel(nil)
+	m.width, m.height = 100, 30
+	m.status = sampleStatus(15)
+	m.cursor = 2
+	m.planning = true
+	m.planSwitch = "pullini"
+	m.planDir = engine.DirectionOff
+
+	view := m.View()
+	if got := strings.Count(view, "BUILDING SWITCH PLAN"); got != 1 {
+		t.Fatalf("expected one planning dialog, got %d:\n%s", got, view)
+	}
+	if !strings.Contains(view, "DESCRIPTION") {
+		t.Fatalf("expected switch table to remain visible behind the dialog, got:\n%s", view)
+	}
+	checkDimensions(t, m, "planning overlay")
+}
+
+func TestProgressOverlayKeepsBackground(t *testing.T) {
+	m := NewModel(nil)
+	m.width, m.height = 100, 30
+	m.status = sampleStatus(15)
+	m.executing = true
+	m.pendingAction = engine.ActionSuspend
+	m.execStep = 3
+	m.execTotal = 16
+	m.execOK = 3
+	m.execProgress = "[3/16] Kustomization/apps (OK)"
+
+	view := m.View()
+	if got := strings.Count(view, "EXECUTING SUSPEND"); got != 1 {
+		t.Fatalf("expected one progress dialog, got %d:\n%s", got, view)
+	}
+	if !strings.Contains(view, "DESCRIPTION") {
+		t.Fatalf("expected switch table to remain visible behind the dialog, got:\n%s", view)
+	}
+	checkDimensions(t, m, "progress overlay")
+}
+
+func TestToggleShowsPlanDialogImmediately(t *testing.T) {
+	m := NewModel(nil)
+	m.width, m.height = 100, 30
+	m.status = statusFromStates(false, false)
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	m = next.(Model)
+	if cmd == nil || !m.planning || m.confirmOpen {
+		t.Fatalf("toggle should start planning, got cmd=%v planning=%v confirm=%v", cmd != nil, m.planning, m.confirmOpen)
+	}
+	if view := m.View(); !strings.Contains(view, "BUILDING SWITCH PLAN") {
+		t.Fatalf("planning dialog should appear before the plan arrives:\n%s", view)
+	}
+
+	next, _ = m.Update(planMsg{
+		action: engine.ActionSuspend, switchID: "flux",
+		direction: engine.DirectionOff, plan: samplePlan(2),
+	})
+	m = next.(Model)
+	if m.planning || !m.confirmOpen {
+		t.Fatalf("plan should replace planning with the confirm dialog, got planning=%v confirm=%v", m.planning, m.confirmOpen)
+	}
 }
 
 func TestHistoryView(t *testing.T) {

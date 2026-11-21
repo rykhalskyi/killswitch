@@ -91,8 +91,15 @@ type Model struct {
 	pendingDir    engine.Direction
 	pendingForce  bool
 	confirmOpen   bool
+	planning      bool
+	planSwitch    string
+	planDir       engine.Direction
 	executing     bool
 	execProgress  string
+	execStep      int
+	execTotal     int
+	execOK        int
+	execFailed    int
 	msgChan       chan tea.Msg
 
 	errorMessage string
@@ -182,6 +189,10 @@ func (m *Model) startExecution(switchID string, dir engine.Direction, force bool
 	ch := make(chan tea.Msg, 64)
 	m.executing = true
 	m.msgChan = ch
+	m.execStep = 0
+	m.execTotal = 0
+	m.execOK = 0
+	m.execFailed = 0
 	m.execProgress = fmt.Sprintf("Starting %s %s...", switchID, dir)
 
 	go func() {

@@ -337,7 +337,9 @@ func handleTUI(args []string) int {
 		return engine.ExitConfigOrConnection
 	}
 
-	logger := setupLogger(cf.logLevel)
+	// stderr is owned by Bubble Tea's alt screen; a logger writing there would
+	// scribble over the rendered frame.
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	eng, cancel, code := initEngine(cf, logger)
 	if code != engine.ExitSuccess {
 		return code

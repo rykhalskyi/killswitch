@@ -37,7 +37,9 @@ func (m Model) View() string {
 	case m.confirmOpen && m.pendingPlan != nil:
 		body = overlayCenter(body, m.renderConfirm(bodyHeight), m.width, bodyHeight)
 	case m.executing:
-		body = m.renderProgress(bodyHeight)
+		body = overlayCenter(body, m.renderProgress(bodyHeight), m.width, bodyHeight)
+	case m.planning:
+		body = overlayCenter(body, m.renderPlanning(bodyHeight), m.width, bodyHeight)
 	}
 
 	return header + "\n" + body

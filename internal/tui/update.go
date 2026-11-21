@@ -43,6 +43,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case planMsg:
+		m.planning = false
 		if msg.err != nil {
 			m.errorMessage = fmt.Sprintf("Error building plan: %v", msg.err)
 			m.confirmOpen = false
@@ -72,9 +73,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case progressMsg:
+		m.execStep = msg.step
+		m.execTotal = msg.total
 		if msg.err != nil {
+			m.execFailed++
 			m.execProgress = fmt.Sprintf("[%d/%d] %s (FAILED: %v)", msg.step, msg.total, msg.res.Name, msg.err)
 		} else {
+			m.execOK++
 			m.execProgress = fmt.Sprintf("[%d/%d] %s (OK)", msg.step, msg.total, msg.res.Name)
 		}
 		return m, waitForProgress(m.msgChan)
@@ -85,6 +90,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.confirmOpen = false
 		m.pendingPlan = nil
 		m.pendingForce = false
+		m.planning = false
+		m.execProgress = ""
 		if msg.err != nil {
 			m.errorMessage = fmt.Sprintf("Execution error: %v", msg.err)
 			m.infoMessage = ""
@@ -97,6 +104,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.executing {
 			if msg.String() == "ctrl+c" {
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+
+		if m.planning {
+			// The plan request is already in flight; ignore further input so
+			// repeated Ctrl+T presses cannot stack dialogs.
+			if msg.String() == "ctrl+c" || msg.String() == "q" {
 				return m, tea.Quit
 			}
 			return m, nil
@@ -140,6 +156,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.errorMessage = ""
 			m.infoMessage = ""
+			m.planning = true
+			m.planSwitch = switchID
+			m.planDir = dir
 			return m, m.fetchPlanCmd(switchID, dir, engine.LegacyAction(dir))
 
 		case "r", "u":

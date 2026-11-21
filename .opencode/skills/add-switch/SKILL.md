@@ -69,7 +69,7 @@ Add more steps (for example a `StatefulSet`) by repeating the same block with a 
 - OFF captures originals; ON restores them.
 - `restore: previous` requires a captured original. Add `default:` so the first ON works.
 - Use `on: {replicas: N}` instead of `restore: previous` for a fixed ON size.
-- `requires.flux: suspended` makes turning the switch ON suspend Flux first. Turning Flux ON later runs this switch's OFF workflow first. The whole cascade is one operation.
+- `requires.flux: suspended` makes turning the switch OFF suspend Flux first, so reconciliation cannot immediately undo the scale-down. Turning Flux ON later runs this switch's OFF workflow first. The whole cascade is one operation.
 
 ### Flux template
 

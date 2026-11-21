@@ -20,7 +20,7 @@ In scope:
 3. **Typed original state.** Replace `OriginalSuspended map[string]bool` and the journal's boolean `from/to/observed` with journal v2 payloads (`action`, `workflow`, `step`, `original`, `desired`, `observed`, `phase`). Keep reading v1 journals so existing state dirs replay.
 4. **Workload scaling.** Implement `kubernetes.scale` for `Deployment` and `StatefulSet` using the dynamic client: observe `spec.replicas`, capture it on ON→OFF, set the OFF target, restore it on ON.
 5. **Switch state.** Derive each switch's display state from live observation of its steps (`ON`, `OFF`, `MIXED`, `DRIFT`, `MISSING`, `UNKNOWN`), using journaled originals for expected/restore values. Reuse the T2 conflict, recovery, lock, breadcrumb, history, and overlay behavior.
-6. **Dependency interlock.** Evaluate `requires.flux` before the first step. Turning a dependent ON auto-suspends Flux when needed. Turning Flux ON first runs the OFF workflow of every currently-ON dependent (in `switches.yaml` order), then resumes reconciliation. The whole cascade is journaled as one operation (D-15, D-17).
+6. **Dependency interlock.** Evaluate `requires.flux` before the first step of an OFF transition. Turning a dependent OFF auto-suspends Flux when needed. Turning Flux ON first runs the OFF workflow of every currently-ON dependent (in `switches.yaml` order), then resumes reconciliation. The whole cascade is journaled as one operation (D-15, D-17).
 7. **CLI/TUI.** `killswitch <switch-id> on|off`, `status --switch`, and `history --switch`; keep `suspend`/`restore` as aliases for the Flux switch. The TUI list is loaded from config and the detail view lists workflow steps and their observed state.
 
 Out of scope: generic `depends_on` graphs, beyond-Flux ordering, rollback policy, node/network/script handlers, parallel steps, arbitrary manifest apply.
@@ -30,7 +30,7 @@ Acceptance criteria:
 - A two-step media workflow scales Deployments to 0 and restores the captured replica counts, including after a restart.
 - External replica changes between OFF and ON surface as conflicts and are journaled with real expected/observed values.
 - An interrupted scale step resumes only unfinished steps and never recaptures originals.
-- `requires.flux: suspended` auto-suspends Flux first, journals it under the same operation, and leaves the Flux switch OFF.
+- `requires.flux: suspended` auto-suspends Flux first when the dependent turns OFF, journals it under the same operation, and leaves the Flux switch OFF; turning the dependent back ON leaves Flux untouched.
 - Turning Flux ON while a dependent is ON runs that dependent's OFF workflow first, then resumes Flux; a failed dependent OFF does not block Flux and is surfaced as MIXED/DRIFT.
 - Dry-run and the confirmation dialog list the primary transition and every cascaded transition.
 - Journal v1 state dirs replay and continue under v2.
