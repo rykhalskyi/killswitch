@@ -1,6 +1,24 @@
-# Kill Switch (`killswitch`)
+<p align="center">
+  <img src="docs/img/logo.png" alt="Kill Switch logo" width="180">
+</p>
 
-**Kill Switch** is a single-binary, reversible infrastructure operations controller for Kubernetes and homelab clusters. 
+<h1 align="center">Kill Switch</h1>
+
+<p align="center"><b>Reversible infrastructure operations for Kubernetes homelabs.</b></p>
+
+<p align="center">
+  <img alt="Go" src="https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white">
+  <img alt="Kubernetes" src="https://img.shields.io/badge/Kubernetes-client--go-326CE5?logo=kubernetes&logoColor=white">
+  <img alt="Flux" src="https://img.shields.io/badge/Flux-CD-5468FF?logo=fluxcd&logoColor=white">
+  <img alt="TUI" src="https://img.shields.io/badge/TUI-Bubble%20Tea-FF75B7">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-012561">
+</p>
+
+<p align="center">
+  <img src="docs/img/tui.png" alt="Kill Switch TUI screenshot" width="100%">
+</p>
+
+**Kill Switch** (`killswitch`) is a single-binary, reversible infrastructure operations controller for Kubernetes and homelab clusters.
 
 Phases 1–2 implement a **Level 2 Flux Freeze**: suspending and restoring configured Flux `Kustomization` and `HelmRelease` resources with strict dependency ordering, write-ahead JSON journaling, atomic crash recovery, and both CLI and interactive TUI interfaces.
 
@@ -11,6 +29,7 @@ Phase 3 adds layered `switches.yaml` + `workflows/*.yaml` configuration, a Go ac
 ## Table of Contents
 
 - [Features](#features)
+- [Tech Stack](#tech-stack)
 - [Installation & Build](#installation--build)
 - [Configuration](#configuration)
 - [Commands & Usage](#commands--usage)
@@ -46,11 +65,25 @@ Phase 3 adds layered `switches.yaml` + `workflows/*.yaml` configuration, a Go ac
 
 ---
 
+## Tech Stack
+
+| Layer | Technology |
+| --- | --- |
+| Language | Go 1.27 |
+| Cluster access | `k8s.io/client-go` dynamic + discovery APIs |
+| Flux resources | `kustomize.toolkit.fluxcd.io` and `helm.toolkit.fluxcd.io` via unstructured objects |
+| Configuration | Layered YAML — `switches.yaml` + `workflows/*.yaml` |
+| TUI | Bubble Tea + Lip Gloss |
+| Safety | Append-only JSONL write-ahead journal, atomic `state.json` snapshot, and `flock` locking |
+| Testing | Go `testing` with client-go fake dynamic clients |
+
+---
+
 ## Installation & Build
 
 ### Prerequisites
 
-- Go `1.26+` (or distro package)
+- Go `1.27+` (or distro package)
 - Active `kubeconfig` pointing to your cluster
 
 ### Build Binary
