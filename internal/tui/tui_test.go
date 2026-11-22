@@ -616,3 +616,29 @@ func TestClusterState(t *testing.T) {
 		t.Fatalf("cluster state = %q, want DRIFT", got)
 	}
 }
+
+func TestOneWaySwitchActsAsButton(t *testing.T) {
+	m := NewModel(nil)
+	m.switches = []switchDef{{id: "cluster-shutdown", name: "Cluster Shutdown", oneWay: true}}
+	m.status = &engine.StatusReport{Switches: []engine.SwitchStatus{{
+		ID: "cluster-shutdown", State: engine.SwitchOn,
+	}}}
+
+	id, dir, ok := m.nextTransition()
+	if !ok || id != "cluster-shutdown" || dir != engine.DirectionOff {
+		t.Fatalf("one-way transition = %q %q %v, want cluster-shutdown off", id, dir, ok)
+	}
+
+	if got := m.switchStateAt(0).label; got != "▶ SHUTDOWN" {
+		t.Fatalf("one-way state = %q, want SHUTDOWN", got)
+	}
+
+	m.status.Switches[0].State = engine.SwitchOff
+	if got := m.switchStateAt(0).label; got != "○ DOWN" {
+		t.Fatalf("one-way state = %q, want DOWN", got)
+	}
+
+	if _, _, ok := m.nextTransition(); !ok {
+		t.Fatal("button must stay usable after the targets are down")
+	}
+}

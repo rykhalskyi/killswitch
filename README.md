@@ -24,6 +24,8 @@ Phases 1–2 implement a **Level 2 Flux Freeze**: suspending and restoring confi
 
 Phase 3 adds layered `switches.yaml` + `workflows/*.yaml` configuration, a Go action-handler registry (`flux.suspend`/`flux.resume`, `kubernetes.scale`, optional `kubernetes.suspend`), typed journal v2 originals, and a Flux dependency interlock that suspends reconciliation before scaling a dependent down.
 
+One-way switches (`one_way: true`) are buttons: they run their steps once, in declaration order, with no ON side. `talos.shutdown` uses `talosctl` to power off nodes sequentially.
+
 ---
 
 ## Table of Contents
@@ -118,7 +120,8 @@ config/
     ├── flux.yaml
     ├── navidrome.yaml
     ├── pullini.yaml
-    └── cloudflared.yaml
+    ├── cloudflared.yaml
+    └── cluster-shutdown.yaml
 ```
 
 ### Example Configuration
@@ -143,6 +146,12 @@ switches:
     description: Scale Cloudflared to zero and close the tunnel (auto-suspends Flux)
     icon: 🌐
     workflow: cloudflared
+
+  - id: cluster-shutdown
+    name: Cluster Shutdown
+    description: Power off 235 → 234 → 233 (one-way; no automatic restore)
+    icon: ⏻
+    workflow: cluster-shutdown
 ```
 
 `icon` is optional. It is rendered in a fixed-width slot in the TUI so names stay aligned; switches without an icon simply leave that slot blank.
@@ -164,15 +173,28 @@ steps:
       on: {restore: previous, default: 1}
 ```
 
-`workflows/pullini.yaml` and `workflows/cloudflared.yaml` follow the same pattern. See `workflows/flux.yaml` for the full Flux example. Steps run in order for ON and in reverse order for OFF.
+`workflows/pullini.yaml` and `workflows/cloudflared.yaml` follow the same pattern. See `workflows/flux.yaml` for the full Flux example. Steps run in order for ON and in reverse order for OFF; one-way workflows run in declaration order.
 
-Supported actions in Phase 3:
+```yaml
+# workflows/cluster-shutdown.yaml
+id: cluster-shutdown
+one_way: true
+steps:
+  - {id: 01-235, action: talos.shutdown, target: {kind: Node, name: "192.168.2.235"}}
+  - {id: 02-234, action: talos.shutdown, target: {kind: Node, name: "192.168.2.234"}}
+  - {id: 03-233, action: talos.shutdown, target: {kind: Node, name: "192.168.2.233"}}
+```
+
+A one-way switch has no ON side: it is a button that runs each step once and waits for the node to become unreachable before starting the next. `talos.shutdown` requires `talosctl` on `PATH` with a working `~/.talos/config`, and must be run from outside the nodes being shut down.
+
+Supported actions:
 
 | Action | Targets | Captured original |
 |---|---|---|
 | `flux.suspend` / `flux.resume` | Flux `Kustomization`, `HelmRelease` | `spec.suspend` |
 | `kubernetes.scale` | `Deployment`, `StatefulSet` | `spec.replicas` |
 | `kubernetes.suspend` (optional) | `CronJob` | `spec.suspend` |
+| `talos.shutdown` | `Node` (address in `name`) | reachability (`up`/`down`); irreversible |
 
 Validate without a cluster:
 

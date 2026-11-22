@@ -114,12 +114,20 @@ func (m Model) renderConfirm(bodyHeight int) string {
 	if m.pendingAction == engine.ActionRestore || m.pendingDir == engine.DirectionOn {
 		current, target = "OFF", "ON"
 	}
+	title := "CONFIRM SWITCH CHANGE"
+	transition := sw.name + ": " + current + " → " + target
+	actionLabel := string(m.pendingAction)
+	if sw.oneWay {
+		title = "CONFIRM SHUTDOWN"
+		transition = sw.name + ": press → SHUT DOWN"
+		actionLabel = "shutdown"
+	}
 
 	lines := []string{
-		modalTitleStyle.Render("CONFIRM SWITCH CHANGE"),
+		modalTitleStyle.Render(title),
 		"",
-		cell(sw.name+": "+current+" → "+target, contentW),
-		cell(fmt.Sprintf("Action: %s · %d steps", m.pendingAction, len(plan.Items)), contentW),
+		cell(transition, contentW),
+		cell(fmt.Sprintf("Action: %s · %d steps", actionLabel, len(plan.Items)), contentW),
 		"",
 	}
 

@@ -25,6 +25,7 @@ type switchDef struct {
 	description string
 	icon        string
 	workflow    string
+	oneWay      bool
 }
 
 var defaultSwitchDefs = []switchDef{
@@ -117,12 +118,19 @@ func NewModel(eng *engine.Engine) Model {
 	m := Model{eng: eng}
 	if eng != nil {
 		for _, sw := range eng.Switches() {
+			oneWay := false
+			if cfg := eng.Config(); cfg != nil {
+				if wf := cfg.WorkflowForSwitch(sw.ID); wf != nil {
+					oneWay = wf.OneWay
+				}
+			}
 			m.switches = append(m.switches, switchDef{
 				id:          sw.ID,
 				name:        sw.Name,
 				description: sw.Description,
 				icon:        sw.Icon,
 				workflow:    sw.Workflow,
+				oneWay:      oneWay,
 			})
 		}
 	}

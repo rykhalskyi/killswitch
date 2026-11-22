@@ -1,0 +1,18 @@
+id: cluster-shutdown
+name: Cluster shutdown
+one_way: true
+
+# One-way workflows run in declaration order. Wait for each node to disappear
+# before moving to the next so the control plane (233) goes last.
+steps:
+  - id: 01-235
+    action: talos.shutdown
+    target: {kind: Node, name: "192.168.2.235"}
+
+  - id: 02-234
+    action: talos.shutdown
+    target: {kind: Node, name: "192.168.2.234"}
+
+  - id: 03-233
+    action: talos.shutdown
+    target: {kind: Node, name: "192.168.2.233"}

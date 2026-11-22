@@ -21,7 +21,7 @@ func (m Model) renderList(bodyHeight int) string {
 	colHeader := cell("NAME", widths[0]) + " " +
 		cell("DESCRIPTION", widths[1]) + " " +
 		cell("CLUSTER", widths[2]) + " " +
-		cellRight("SWITCH", widths[3])
+		cellRight("STATE", widths[3])
 
 	clusterLabel, _ := m.clusterState()
 	defs := m.switchDefs()
@@ -164,6 +164,13 @@ func (m Model) nextTransition() (string, engine.Direction, bool) {
 	if idx < 0 || idx >= len(defs) {
 		return "", "", false
 	}
+	def := defs[idx]
+	if def.oneWay {
+		if m.status == nil {
+			return "", "", false
+		}
+		return def.id, engine.DirectionOff, true
+	}
 	st := m.switchStateAt(idx)
 	if !st.known {
 		return "", "", false
@@ -172,7 +179,7 @@ func (m Model) nextTransition() (string, engine.Direction, bool) {
 	if st.on {
 		dir = engine.DirectionOff
 	}
-	return defs[idx].id, dir, true
+	return def.id, dir, true
 }
 
 func (m Model) fluxSwitchID() string {
@@ -193,13 +200,38 @@ func (m Model) switchStateAt(idx int) switchState {
 	def := defs[idx]
 	for _, st := range m.status.Switches {
 		if st.ID == def.id {
+			if def.oneWay {
+				return mapOneWayState(st.State)
+			}
 			return mapSwitchState(st.State)
 		}
+	}
+	if def.oneWay {
+		return switchState{label: "? UNKNOWN", style: dimStyle}
 	}
 	if def.id == m.fluxSwitchID() && len(m.status.Resources) > 0 {
 		return m.switchState()
 	}
 	return switchState{label: "? UNKNOWN", style: dimStyle}
+}
+
+// mapOneWayState describes a button-style switch: it has no ON/OFF position,
+// only whether its targets are still operational or already shut down.
+func mapOneWayState(st engine.SwitchState) switchState {
+	switch st {
+	case engine.SwitchOn:
+		return switchState{label: "▶ SHUTDOWN", style: actionStyle, known: true}
+	case engine.SwitchOff:
+		return switchState{label: "○ DOWN", style: offStyle, known: true}
+	case engine.SwitchMixed:
+		return switchState{label: "◐ PARTIAL", style: mixedStyle, known: true}
+	case engine.SwitchDrift:
+		return switchState{label: "⚠ DRIFT", style: mixedStyle, known: true}
+	case engine.SwitchMissing:
+		return switchState{label: "✕ MISSING", style: errorStyle, known: true}
+	default:
+		return switchState{label: "? UNKNOWN", style: dimStyle}
+	}
 }
 
 func mapSwitchState(st engine.SwitchState) switchState {

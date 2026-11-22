@@ -20,3 +20,9 @@ switches:
     description: Scale Cloudflared to zero and close the tunnel (auto-suspends Flux)
     icon: 🌐
     workflow: cloudflared
+
+  - id: cluster-shutdown
+    name: Cluster Shutdown
+    description: Power off 235 → 234 → 233 (one-way; no automatic restore)
+    icon: ⏻
+    workflow: cluster-shutdown

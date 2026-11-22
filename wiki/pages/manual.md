@@ -54,6 +54,11 @@ switches:
     description: Scale Cloudflared to zero and close the tunnel (auto-suspends Flux)
     icon: 🌐
     workflow: cloudflared
+  - id: cluster-shutdown
+    name: Cluster Shutdown
+    description: Power off 235 → 234 → 233 (one-way; no automatic restore)
+    icon: ⏻
+    workflow: cluster-shutdown
 ```
 
 ```yaml
@@ -75,16 +80,31 @@ steps:
 
 Steps run in declaration order for ON and in reverse order for OFF. `requires.flux` accepts `suspended`, `active`, or `any` and creates a one-way Flux interlock (a dependent may suspend Flux before scaling down).
 
-Supported actions in Phase 3:
+A workflow with `one_way: true` is a button: it has no ON side, always runs its steps in declaration order, and refuses ON transitions. One-way workflows cannot require Flux.
+
+```yaml
+# workflows/cluster-shutdown.yaml
+id: cluster-shutdown
+one_way: true
+steps:
+  - {id: 01-235, action: talos.shutdown, target: {kind: Node, name: "192.168.2.235"}}
+  - {id: 02-234, action: talos.shutdown, target: {kind: Node, name: "192.168.2.234"}}
+  - {id: 03-233, action: talos.shutdown, target: {kind: Node, name: "192.168.2.233"}}
+```
+
+`talos.shutdown` runs `talosctl shutdown --nodes <name> --endpoints <name>` and polls the Talos API port until the node is unreachable before the next step starts. It is idempotent and irreversible, requires `talosctl` on `PATH` with a valid `~/.talos/config`, and must run from outside the nodes being shut down.
+
+Supported actions:
 - `flux.suspend` / `flux.resume` on `Kustomization` and `HelmRelease` (captures `spec.suspend`).
 - `kubernetes.scale` on `Deployment` and `StatefulSet` (captures `spec.replicas`).
 - `kubernetes.suspend` on `CronJob` (captures `spec.suspend`; optional).
+- `talos.shutdown` on `Node` (captures reachability; irreversible).
 
 Validation rules:
 - Switch ids are unique and reference existing workflows.
 - Workflow ids are unique; step ids are unique within a workflow.
-- Action targets match the supported kinds and have a non-empty namespace and name.
-- `requires.flux` is `suspended`, `active`, or `any`; the Flux switch cannot require itself.
+- Action targets match the supported kinds. Non-Node targets need a non-empty namespace and name; Node targets use the address in `name` and have no namespace.
+- `requires.flux` is `suspended`, `active`, or `any`; the Flux switch cannot require itself, and one-way workflows cannot require Flux.
 - Legacy single-file `flux.resources` configs are rejected. Run `killswitch validate` to check a config without a cluster.
 
 Originals are captured only on ON→OFF, never overwritten, and typed per action. An ON transition without a recorded original is refused unless `states.on.default` is set.
@@ -104,6 +124,8 @@ killswitch navidrome on --yes
 ```
 
 OFF captures the original state for every step (replicas or suspend flags) before applying the non-default state. ON restores those originals, or applies a fixed/default value when no original exists. If a workflow requires Flux suspended, turning it OFF first suspends Flux in the same operation; turning it back ON leaves Flux as-is. Toggling Flux never modifies dependent switches; Flux reconciliation is the source of truth for workload state.
+
+A one-way switch (`one_way: true`) is a button, not a toggle: `ctrl+t` in the TUI or `killswitch <switch-id> off` runs it once in declaration order, and `on` is refused. Its `STATE` cell shows `▶ SHUTDOWN` when its targets are up, `○ DOWN` when they are all off, or `◐ PARTIAL` when mixed.
 
 `killswitch suspend` and `killswitch restore` remain aliases for the Flux switch (`flux off` / `flux on`).
 

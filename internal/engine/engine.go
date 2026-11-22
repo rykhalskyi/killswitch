@@ -42,6 +42,7 @@ func New(cfg *config.Config, client flux.Client, stateDir, kubeCtx string, logge
 		registry.Register(config.ActionFluxSuspend, fh)
 		registry.Register(config.ActionFluxResume, fh)
 	}
+	registry.Register(config.ActionTalosShutdown, &actions.TalosShutdownHandler{Client: actions.NewTalosCLI()})
 	return &Engine{
 		cfg:        cfg,
 		fluxClient: client,
@@ -73,6 +74,11 @@ func (e *Engine) SetScaleHandler(h actions.Handler) {
 // SetCronJobHandler registers a CronJob suspend handler directly (used by tests).
 func (e *Engine) SetCronJobHandler(h actions.Handler) {
 	e.registry.Register(config.ActionKubeSuspend, h)
+}
+
+// SetTalosHandler registers a Talos shutdown handler directly (used by tests).
+func (e *Engine) SetTalosHandler(h actions.Handler) {
+	e.registry.Register(config.ActionTalosShutdown, h)
 }
 
 // Config returns the normalized configuration.

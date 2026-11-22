@@ -99,11 +99,22 @@ func (m Model) renderStepDetail(bodyHeight int, st engine.SwitchStatus) string {
 		if !step.Exists {
 			observed = "MISSING"
 		}
+		stateLabel := step.State
+		if m.selectedSwitch().oneWay {
+			switch engine.SwitchState(step.State) {
+			case engine.SwitchOn:
+				stateLabel = "READY"
+			case engine.SwitchOff:
+				stateLabel = "DOWN"
+			case engine.SwitchMixed:
+				stateLabel = "PARTIAL"
+			}
+		}
 		row := strings.Join([]string{
 			cell(step.Step, widths[0]),
 			cell(step.Action, widths[1]),
 			cell(step.Target.Kind+"/"+step.Target.Name, widths[2]),
-			cell(step.State, widths[3]),
+			cell(stateLabel, widths[3]),
 			cell(observed, widths[4]),
 			cell(fmt.Sprintf("%v", step.Original), widths[5]),
 		}, " ")
