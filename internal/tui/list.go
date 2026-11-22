@@ -200,6 +200,9 @@ func (m Model) switchStateAt(idx int) switchState {
 	def := defs[idx]
 	for _, st := range m.status.Switches {
 		if st.ID == def.id {
+			if st.Error != "" {
+				return switchState{label: "⚠ ERROR", style: errorStyle}
+			}
 			if def.oneWay {
 				return mapOneWayState(st.State)
 			}

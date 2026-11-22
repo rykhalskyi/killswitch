@@ -92,7 +92,7 @@ steps:
   - {id: 03-233, action: talos.shutdown, target: {kind: Node, name: "192.168.2.233"}}
 ```
 
-`talos.shutdown` runs `talosctl shutdown --nodes <name> --endpoints <name>` and polls the Talos API port until the node is unreachable before the next step starts. It is idempotent and irreversible, requires `talosctl` on `PATH` with a valid `~/.talos/config`, and must run from outside the nodes being shut down.
+`talos.shutdown` runs `talosctl shutdown --nodes <name> --endpoints <name>` and polls the Talos API port until the node is unreachable before the next step starts. It is idempotent and irreversible, requires `talosctl` on `PATH` with a valid `~/.talos/config`, and must run from outside the nodes being shut down. The CLI extends its default operation timeout for one-way workflows; an explicit `--timeout` must cover every node (roughly two minutes per node).
 
 Supported actions:
 - `flux.suspend` / `flux.resume` on `Kustomization` and `HelmRelease` (captures `spec.suspend`).
@@ -125,7 +125,7 @@ killswitch navidrome on --yes
 
 OFF captures the original state for every step (replicas or suspend flags) before applying the non-default state. ON restores those originals, or applies a fixed/default value when no original exists. If a workflow requires Flux suspended, turning it OFF first suspends Flux in the same operation; turning it back ON leaves Flux as-is. Toggling Flux never modifies dependent switches; Flux reconciliation is the source of truth for workload state.
 
-A one-way switch (`one_way: true`) is a button, not a toggle: `ctrl+t` in the TUI or `killswitch <switch-id> off` runs it once in declaration order, and `on` is refused. Its `STATE` cell shows `▶ SHUTDOWN` when its targets are up, `○ DOWN` when they are all off, or `◐ PARTIAL` when mixed.
+A one-way switch (`one_way: true`) is a button, not a toggle: `ctrl+t` in the TUI or `killswitch <switch-id> off` runs it once in declaration order, and `on` is refused. Its `STATE` cell shows `▶ SHUTDOWN` when its targets are up, `○ DOWN` when they are all off, or `◐ PARTIAL` when mixed. A switch whose live probe fails shows `⚠ ERROR` (state `UNKNOWN`) while the other switches still render; the per-step error is available in the properties view.
 
 `killswitch suspend` and `killswitch restore` remain aliases for the Flux switch (`flux off` / `flux on`).
 
@@ -148,6 +148,8 @@ Output fields:
   - `SUSPENDED`: All configured resources verified suspended.
   - `RESTORED`: All configured resources match recorded original baselines.
   - `PARTIAL`: Mixed state; requires intervention.
+
+A switch whose live probe fails is reported as `UNKNOWN` with a `Warning:`/`Error:` line instead of failing the entire status query.
 
 For programmatic consumption:
 ```sh

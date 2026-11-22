@@ -185,7 +185,7 @@ steps:
   - {id: 03-233, action: talos.shutdown, target: {kind: Node, name: "192.168.2.233"}}
 ```
 
-A one-way switch has no ON side: it is a button that runs each step once and waits for the node to become unreachable before starting the next. `talos.shutdown` requires `talosctl` on `PATH` with a working `~/.talos/config`, and must be run from outside the nodes being shut down.
+A one-way switch has no ON side: it is a button that runs each step once and waits for the node to become unreachable before starting the next. `talos.shutdown` requires `talosctl` on `PATH` with a working `~/.talos/config`, and must be run from outside the nodes being shut down. Because each step waits, the CLI automatically extends its default operation timeout for one-way workflows; if you pass `--timeout` explicitly it must cover every node (roughly two minutes per node). A probe failure renders that switch as `⚠ ERROR`/`UNKNOWN` instead of aborting the whole status report.
 
 Supported actions:
 
@@ -226,6 +226,8 @@ Output highlights:
 - `ORIGINAL`: Recorded original state before the last suspend
 - `GEN/OBS`: Resource generation vs observed generation (tagged with `(!)` if the controller is lagging)
 - `PHASE`: Active in-progress phase during an operation or recovery
+
+A switch whose live probe fails is reported with `Error:`/`UNKNOWN` (or `⚠ ERROR` in the TUI) without hiding the other switches.
 
 ---
 

@@ -20,8 +20,12 @@ const (
 	nodeUp       = "up"
 	nodeDown     = "down"
 
-	dialTimeout    = 2 * time.Second
-	commandTimeout = 30 * time.Second
+	// DialTimeout bounds a single reachability probe.
+	DialTimeout = 2 * time.Second
+	// DefaultShutdownCommandTimeout bounds one talosctl invocation.
+	DefaultShutdownCommandTimeout = 30 * time.Second
+	// DefaultNodeDownTimeout bounds how long we wait for one node to disappear.
+	DefaultNodeDownTimeout = 90 * time.Second
 )
 
 // TalosClient observes node reachability and shuts nodes down.
@@ -36,6 +40,8 @@ type TalosCLI struct {
 	Port     string
 	Timeout  time.Duration
 	Interval time.Duration
+	// DialContext is optional and overrides the TCP probe (used by tests).
+	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
 // NewTalosCLI returns a Talos client with production defaults.
@@ -43,21 +49,31 @@ func NewTalosCLI() *TalosCLI {
 	return &TalosCLI{
 		Command:  "talosctl",
 		Port:     TalosAPIPort,
-		Timeout:  90 * time.Second,
+		Timeout:  DefaultNodeDownTimeout,
 		Interval: 2 * time.Second,
 	}
 }
 
-// NodeUp reports whether the node's Talos API is reachable. An unreachable
-// node is reported as down, not as an error.
+// NodeUp reports whether the node's Talos API is reachable. A node that cannot
+// be dialed is reported as down; a canceled or expired context is an error, so
+// callers never mistake a lost probe for a powered-off node.
 func (c *TalosCLI) NodeUp(ctx context.Context, node string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	port := c.Port
 	if port == "" {
 		port = TalosAPIPort
 	}
-	dialer := net.Dialer{Timeout: dialTimeout}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(node, port))
+	dial := c.DialContext
+	if dial == nil {
+		dial = (&net.Dialer{Timeout: DialTimeout}).DialContext
+	}
+	conn, err := dial(ctx, "tcp", net.JoinHostPort(node, port))
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return false, ctxErr
+		}
 		return false, nil
 	}
 	_ = conn.Close()
@@ -65,9 +81,15 @@ func (c *TalosCLI) NodeUp(ctx context.Context, node string) (bool, error) {
 }
 
 // Shutdown asks talosctl to power off the node and waits until it is gone.
-// It is idempotent: an already-down node is treated as success.
+// It is idempotent: an already-down node is treated as success. Probe errors
+// (such as a canceled context) are returned so they cannot be mistaken for a
+// successful shutdown.
 func (c *TalosCLI) Shutdown(ctx context.Context, node string) error {
-	if up, _ := c.NodeUp(ctx, node); !up {
+	up, err := c.NodeUp(ctx, node)
+	if err != nil {
+		return fmt.Errorf("probing node %s before shutdown: %w", node, err)
+	}
+	if !up {
 		return nil
 	}
 
@@ -75,14 +97,18 @@ func (c *TalosCLI) Shutdown(ctx context.Context, node string) error {
 	if command == "" {
 		command = "talosctl"
 	}
-	cmdCtx, cancel := context.WithTimeout(ctx, commandTimeout)
+	cmdCtx, cancel := context.WithTimeout(ctx, DefaultShutdownCommandTimeout)
 	defer cancel()
 	// Target the node directly on both endpoints and nodes so a talosconfig
 	// endpoint that has already been powered off does not block later steps.
 	out, err := exec.CommandContext(cmdCtx, command, "shutdown", "--nodes", node, "--endpoints", node).CombinedOutput()
 	if err != nil {
 		// The connection commonly drops while the node powers off.
-		if up, _ := c.NodeUp(ctx, node); !up {
+		up, probeErr := c.NodeUp(ctx, node)
+		if probeErr != nil {
+			return fmt.Errorf("talosctl shutdown --nodes %s: %w (probe: %v): %s", node, err, probeErr, strings.TrimSpace(string(out)))
+		}
+		if !up {
 			return nil
 		}
 		return fmt.Errorf("talosctl shutdown --nodes %s: %w: %s", node, err, strings.TrimSpace(string(out)))
@@ -93,7 +119,7 @@ func (c *TalosCLI) Shutdown(ctx context.Context, node string) error {
 func (c *TalosCLI) waitDown(ctx context.Context, node string) error {
 	timeout := c.Timeout
 	if timeout <= 0 {
-		timeout = 90 * time.Second
+		timeout = DefaultNodeDownTimeout
 	}
 	interval := c.Interval
 	if interval <= 0 {
@@ -106,12 +132,16 @@ func (c *TalosCLI) waitDown(ctx context.Context, node string) error {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if up, _ := c.NodeUp(waitCtx, node); !up {
+		up, err := c.NodeUp(waitCtx, node)
+		if err != nil {
+			return fmt.Errorf("waiting for node %s to shut down: %w", node, err)
+		}
+		if !up {
 			return nil
 		}
 		select {
 		case <-waitCtx.Done():
-			return fmt.Errorf("node %s did not shut down within %s", node, timeout)
+			return fmt.Errorf("node %s did not shut down within %s: %w", node, timeout, waitCtx.Err())
 		case <-ticker.C:
 		}
 	}

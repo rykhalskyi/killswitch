@@ -126,10 +126,17 @@ func (m Model) renderStepDetail(bodyHeight int, st engine.SwitchStatus) string {
 
 	innerH := bodyHeight - 2
 	maxRows := innerH - 6
+	if st.Error != "" {
+		maxRows--
+	}
 	if maxRows < 1 {
 		maxRows = 1
 	}
 	visible, start := windowRows(rows, m.detailCursor, maxRows)
+	if st.Error != "" {
+		banner := errorStyle.Render(cell("⚠ "+st.Error, usable))
+		visible = append([]string{banner}, visible...)
+	}
 
 	title := m.breadcrumb()
 	right := fmt.Sprintf("%d steps", len(steps))

@@ -179,6 +179,7 @@ type SwitchStatus struct {
 	Description string       `json:"description"`
 	Workflow    string       `json:"workflow"`
 	State       SwitchState  `json:"state"`
+	Error       string       `json:"error,omitempty"`
 	Requires    string       `json:"requiresFlux,omitempty"`
 	Steps       []StepStatus `json:"steps,omitempty"`
 }

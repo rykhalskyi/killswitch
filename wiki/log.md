@@ -27,3 +27,5 @@
 ## [2026-11-22] feature | revamp operation history with switch names, step counts, per-step details, and TUI history drill-down
 ## [2026-11-22] fix | show direction and one-way markers in operation history
 ## [2026-11-22] feature | add a scrollable raw journal view to TUI history
+## [2026-11-22] fix | talos.shutdown no longer treats canceled/expired probes as a powered-off node; CLI timeout auto-extends for one-way workflows
+## [2026-11-22] fix | status renders a per-switch UNKNOWN/error instead of failing the whole query; release version 0.3.5
