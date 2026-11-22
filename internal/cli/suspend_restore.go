@@ -75,8 +75,15 @@ func switchTimeout(cfg *config.Config, switchID string, base time.Duration, expl
 	if wf == nil || !wf.OneWay {
 		return base
 	}
-	perStep := actions.DefaultShutdownCommandTimeout + actions.DefaultNodeDownTimeout
-	needed := time.Duration(len(wf.Steps))*perStep + 30*time.Second
+	var needed time.Duration
+	for _, step := range wf.Steps {
+		wait := actions.DefaultNodeDownTimeout
+		if stepTimeout := wf.StepTimeout(step); stepTimeout > 0 {
+			wait = stepTimeout
+		}
+		needed += actions.DefaultShutdownCommandTimeout + wait
+	}
+	needed += 30 * time.Second
 	if needed > base {
 		return needed
 	}

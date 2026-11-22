@@ -86,13 +86,14 @@ A workflow with `one_way: true` is a button: it has no ON side, always runs its 
 # workflows/cluster-shutdown.yaml
 id: cluster-shutdown
 one_way: true
+timeout: 10m
 steps:
   - {id: 01-235, action: talos.shutdown, target: {kind: Node, name: "192.168.2.235"}}
   - {id: 02-234, action: talos.shutdown, target: {kind: Node, name: "192.168.2.234"}}
   - {id: 03-233, action: talos.shutdown, target: {kind: Node, name: "192.168.2.233"}}
 ```
 
-`talos.shutdown` runs `talosctl shutdown --nodes <name> --endpoints <name>` and polls the Talos API port until the node is unreachable before the next step starts. It is idempotent and irreversible, requires `talosctl` on `PATH` with a valid `~/.talos/config`, and must run from outside the nodes being shut down. The CLI extends its default operation timeout for one-way workflows; an explicit `--timeout` must cover every node (roughly two minutes per node).
+`talos.shutdown` runs `talosctl shutdown --nodes <name> --endpoints <name>` and polls the Talos API port until the node is unreachable before the next step starts. It is idempotent and irreversible, requires `talosctl` on `PATH` with a valid `~/.talos/config`, and must run from outside the nodes being shut down. Each step waits up to the workflow `timeout` (default `90s`; a per-step `timeout` overrides it), so set `timeout: 10m` when nodes take several minutes to power off. The CLI extends its default operation timeout for one-way workflows to cover every step; an explicit `--timeout` must cover the whole run.
 
 Supported actions:
 - `flux.suspend` / `flux.resume` on `Kustomization` and `HelmRelease` (captures `spec.suspend`).

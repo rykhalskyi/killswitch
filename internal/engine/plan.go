@@ -158,6 +158,7 @@ func (e *Engine) buildSteps(ctx context.Context, sw *config.Switch, wf *config.W
 			OriginalValue:   original,
 			Cascade:         cascade,
 			ContinueOnError: continueOnError,
+			Timeout:         config.Duration(wf.StepTimeout(step)),
 		}
 
 		if !exists {

@@ -305,9 +305,10 @@ func (e *Engine) ExecuteSwitch(ctx context.Context, switchID string, dir Directi
 
 func stepFromItem(item PlanItem) config.Step {
 	return config.Step{
-		ID:     item.Step,
-		Action: item.Action,
-		Target: item.Resource,
+		ID:      item.Step,
+		Action:  item.Action,
+		Target:  item.Resource,
+		Timeout: item.Timeout,
 	}
 }
 

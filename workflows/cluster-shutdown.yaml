@@ -4,6 +4,10 @@ one_way: true
 
 # One-way workflows run in declaration order. Wait for each node to disappear
 # before moving to the next so the control plane (233) goes last.
+#
+# timeout: how long each step waits for its node to power off. Nodes here take
+# about six minutes, so leave headroom. A step-level timeout overrides this.
+timeout: 10m
 steps:
   - id: 01-235
     action: talos.shutdown
