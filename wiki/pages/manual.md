@@ -20,7 +20,7 @@ This manual explains how to configure, operate, and troubleshoot Kill Switch (`k
 | `killswitch suspend` | Alias for `flux off` | `--dry-run`, `--yes`, `--force` |
 | `killswitch restore` | Alias for `flux on` | `--dry-run`, `--yes`, `--force` |
 | `killswitch validate` | Validate layered config without a cluster | — |
-| `killswitch history` | Inspect past journaled operations | `--switch ID`, `--limit N`, `--json` |
+| `killswitch history` | Inspect past journaled operations | `--switch ID`, `--limit N`, `--json`, `--details` |
 | `killswitch tui` | Interactive terminal UI | — |
 
 Global flags for all commands:
@@ -213,12 +213,13 @@ The switch list is loaded from `switches.yaml`. The panel title is a breadcrumb 
 The confirmation dialog is composited over the dimmed switch table, so the underlying view stays visible while the pending change is reviewed.
 
 Keybindings:
-- `↑` / `↓` (or `k` / `j`) — Select a switch, or scroll properties, the YAML view, and history
-- `Enter` — Open the selected switch's properties
+- `↑` / `↓` (or `k` / `j`) — Select a switch, or scroll properties, the YAML view, history, and history details
+- `Enter` — Open the selected switch's properties, or the selected history operation's step details
 - `y` (in properties) — Show the selected switch's effective YAML; scroll with `↑`/`↓`, `g`/`G`, or `PgUp`/`PgDn`, `Esc` to go back
-- `Esc` — Return from properties, YAML, or history to the previous screen
+- `Esc` — Return from properties, YAML, history details, or history to the previous screen
 - `Ctrl+T` (or `t` / `Space`) — Toggle the selected switch; a "building switch plan" dialog appears immediately, then the confirmation modal once the plan is ready
-- `h` — Open the operation history view
+- `h` — Open the operation history view (`Enter` there opens step details)
+- `l` (in history or step details) — Show the raw `journal.jsonl` records for the selected operation; scroll with `↑`/`↓`, `g`/`G`, or `PgUp`/`PgDn
 - `y` / `Enter` (in the confirmation dialog) — Confirm the pending change
 - `f` — Confirm with force override when the plan shows conflicts
 - `n` / `Esc` — Cancel the pending change
@@ -234,12 +235,13 @@ Query the write-ahead journal (`journal.jsonl`) from the CLI or TUI:
 ```sh
 killswitch history --limit 10
 killswitch history --switch navidrome
+killswitch history --details
 killswitch history --json
 ```
 
-In the TUI, press `h` to open the same history view; `↑`/`↓` scrolls and `Esc` returns. Both read `Engine.History`, so the CLI and TUI always agree.
+Each row shows the time, switch name, direction (`ON`, `OFF`, or `ONE-WAY`), result status, completed/target steps, and duration. `--details` expands every operation into its workflow steps with the action, target, result, original/desired/observed values, and errors. `--json` includes the same per-step records.
 
-Displays timestamp, operation ID, action, outcome status, targets count, OK count, failed count, and duration in milliseconds.
+In the TUI, press `h` to open the same history view; `↑`/`↓` selects an operation, `Enter` opens its step details, `l` opens the raw journal records for the selected operation (scrollable with `↑`/`↓`, `g`/`G`, `PgUp`/`PgDn`), and `Esc` returns. Both read `Engine.History`, so the CLI and TUI always agree.
 
 ---
 

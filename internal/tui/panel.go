@@ -93,7 +93,11 @@ func (m Model) footerText() string {
 	}
 	switch m.view {
 	case viewHistory:
-		return "[↑/↓] scroll   [esc] back   [r] refresh   [q] quit"
+		return "[↑/↓] select   [enter] details   [l] journal   [esc] back   [r] refresh   [q] quit"
+	case viewHistoryDetail:
+		return "[↑/↓] scroll   [l] journal   [esc] back   [r] refresh   [q] quit"
+	case viewHistoryLog:
+		return "[↑/↓] scroll   [g/G] top/bottom   [esc] back   [r] refresh   [q] quit"
 	case viewYAML:
 		return "[↑/↓] scroll   [g/G] top/bottom   [esc] back   [q] quit"
 	case viewDetail:

@@ -310,6 +310,7 @@ func handleHistory(args []string) int {
 	limit := fs.Int("limit", 20, "Maximum number of history entries to show")
 	jsonFlag := fs.Bool("json", false, "Output in JSON format")
 	switchID := fs.String("switch", "", "Filter history by switch")
+	details := fs.Bool("details", false, "Show per-step details for each operation")
 
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "Flag error: %v\n", err)
@@ -324,7 +325,7 @@ func handleHistory(args []string) int {
 	defer cancel()
 	defer eng.Close()
 
-	return runHistory(eng, *limit, *jsonFlag, *switchID)
+	return runHistory(eng, *limit, *jsonFlag, *switchID, *details)
 }
 
 func handleTUI(args []string) int {

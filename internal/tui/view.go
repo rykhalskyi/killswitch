@@ -29,6 +29,10 @@ func (m Model) View() string {
 		body = m.renderDetail(bodyHeight)
 	case m.view == viewHistory:
 		body = m.renderHistory(bodyHeight)
+	case m.view == viewHistoryDetail:
+		body = m.renderHistoryDetail(bodyHeight)
+	case m.view == viewHistoryLog:
+		body = m.renderHistoryLog(bodyHeight)
 	case m.view == viewYAML:
 		body = m.renderYAML(bodyHeight)
 	default:

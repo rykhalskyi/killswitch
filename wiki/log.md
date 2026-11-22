@@ -24,3 +24,6 @@
 ## [2026-11-21] feat | switches.yaml icon field renders configurable TUI markers in a fixed-width slot
 ## [2026-11-21] feat | cloudflared switch added; release version 0.3.0
 ## [2026-11-22] feature | add one-way switches and the talos.shutdown node power-off handler
+## [2026-11-22] feature | revamp operation history with switch names, step counts, per-step details, and TUI history drill-down
+## [2026-11-22] fix | show direction and one-way markers in operation history
+## [2026-11-22] feature | add a scrollable raw journal view to TUI history

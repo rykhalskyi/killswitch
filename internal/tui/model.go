@@ -15,6 +15,8 @@ const (
 	viewList viewMode = iota
 	viewDetail
 	viewHistory
+	viewHistoryDetail
+	viewHistoryLog
 	viewYAML
 )
 
@@ -61,6 +63,12 @@ type historyMsg struct {
 	err   error
 }
 
+type historyLogMsg struct {
+	op    string
+	lines []string
+	err   error
+}
+
 type progressMsg struct {
 	step   int
 	total  int
@@ -84,6 +92,13 @@ type Model struct {
 	cursor        int
 	detailCursor  int
 	historyCursor int
+
+	historyDetailCursor int
+
+	historyLogLines  []string
+	historyLogScroll int
+	historyLogOp     string
+	historyLogReturn viewMode
 
 	// switch YAML
 	yamlLines  []string
@@ -208,6 +223,16 @@ func (m Model) fetchHistoryCmd() tea.Cmd {
 	return func() tea.Msg {
 		items, err := m.eng.History(50)
 		return historyMsg{items: items, err: err}
+	}
+}
+
+func (m Model) fetchHistoryLogCmd(op string) tea.Cmd {
+	return func() tea.Msg {
+		if m.eng == nil {
+			return historyLogMsg{op: op, err: fmt.Errorf("engine not available")}
+		}
+		lines, err := m.eng.OperationLog(op)
+		return historyLogMsg{op: op, lines: lines, err: err}
 	}
 }
 

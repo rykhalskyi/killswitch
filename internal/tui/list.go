@@ -16,7 +16,7 @@ func switchNameText(marker, icon, name string) string {
 
 func (m Model) renderList(bodyHeight int) string {
 	usable := m.contentWidth()
-	widths := allocWidths(usable-3, []int{32, 37, 15, 16})
+	widths := allocWidths(usable-3, []int{32, 43, 12, 16})
 
 	colHeader := cell("NAME", widths[0]) + " " +
 		cell("DESCRIPTION", widths[1]) + " " +
