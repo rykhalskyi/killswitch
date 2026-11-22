@@ -17,11 +17,13 @@ const (
 	KindDeployment    = "Deployment"
 	KindStatefulSet   = "StatefulSet"
 	KindCronJob       = "CronJob"
+	KindNode          = "Node"
 
-	ActionFluxSuspend = "flux.suspend"
-	ActionFluxResume  = "flux.resume"
-	ActionKubeScale   = "kubernetes.scale"
-	ActionKubeSuspend = "kubernetes.suspend"
+	ActionFluxSuspend   = "flux.suspend"
+	ActionFluxResume    = "flux.resume"
+	ActionKubeScale     = "kubernetes.scale"
+	ActionKubeSuspend   = "kubernetes.suspend"
+	ActionTalosShutdown = "talos.shutdown"
 
 	RequiresAny       = "any"
 	RequiresSuspended = "suspended"
@@ -86,6 +88,9 @@ type Workflow struct {
 	Requires Requires `yaml:"requires" json:"requires"`
 	Steps    []Step   `yaml:"steps" json:"steps"`
 	OnError  string   `yaml:"on_error" json:"on_error"`
+	// OneWay marks a workflow as a one-off action with no ON side. It runs in
+	// declaration order for OFF and refuses ON transitions.
+	OneWay bool `yaml:"one_way,omitempty" json:"one_way,omitempty"`
 }
 
 // SwitchesFile is the root switches.yaml structure.
@@ -329,6 +334,9 @@ func (c *Config) Validate() error {
 		default:
 			return fmt.Errorf("workflow %q has invalid requires.flux %q", id, wf.Requires.Flux)
 		}
+		if wf.OneWay && wf.Requires.Flux != "" && wf.Requires.Flux != RequiresAny {
+			return fmt.Errorf("workflow %q is one-way and cannot require flux=%s", id, wf.Requires.Flux)
+		}
 		stepIDs := make(map[string]bool)
 		for i, step := range wf.Steps {
 			if step.ID == "" {
@@ -361,14 +369,19 @@ func (c *Config) validateStep(workflowID string, step Step) error {
 		if step.Target.Kind != KindCronJob {
 			return fmt.Errorf("workflow %q step %q: kubernetes.suspend supports CronJob, got %q", workflowID, step.ID, step.Target.Kind)
 		}
+	case ActionTalosShutdown:
+		if step.Target.Kind != KindNode {
+			return fmt.Errorf("workflow %q step %q: talos.shutdown supports Node, got %q", workflowID, step.ID, step.Target.Kind)
+		}
 	default:
 		return fmt.Errorf("workflow %q step %q: unsupported action %q", workflowID, step.ID, step.Action)
 	}
-	if step.Target.Namespace == "" {
-		return fmt.Errorf("workflow %q step %q target namespace cannot be empty", workflowID, step.ID)
-	}
 	if step.Target.Name == "" {
 		return fmt.Errorf("workflow %q step %q target name cannot be empty", workflowID, step.ID)
+	}
+	// Node targets are cluster-scoped, so they carry no namespace.
+	if step.Target.Kind != KindNode && step.Target.Namespace == "" {
+		return fmt.Errorf("workflow %q step %q target namespace cannot be empty", workflowID, step.ID)
 	}
 	return nil
 }

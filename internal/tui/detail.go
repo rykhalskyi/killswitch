@@ -99,11 +99,22 @@ func (m Model) renderStepDetail(bodyHeight int, st engine.SwitchStatus) string {
 		if !step.Exists {
 			observed = "MISSING"
 		}
+		stateLabel := step.State
+		if m.selectedSwitch().oneWay {
+			switch engine.SwitchState(step.State) {
+			case engine.SwitchOn:
+				stateLabel = "READY"
+			case engine.SwitchOff:
+				stateLabel = "DOWN"
+			case engine.SwitchMixed:
+				stateLabel = "PARTIAL"
+			}
+		}
 		row := strings.Join([]string{
 			cell(step.Step, widths[0]),
 			cell(step.Action, widths[1]),
 			cell(step.Target.Kind+"/"+step.Target.Name, widths[2]),
-			cell(step.State, widths[3]),
+			cell(stateLabel, widths[3]),
 			cell(observed, widths[4]),
 			cell(fmt.Sprintf("%v", step.Original), widths[5]),
 		}, " ")
@@ -115,10 +126,17 @@ func (m Model) renderStepDetail(bodyHeight int, st engine.SwitchStatus) string {
 
 	innerH := bodyHeight - 2
 	maxRows := innerH - 6
+	if st.Error != "" {
+		maxRows--
+	}
 	if maxRows < 1 {
 		maxRows = 1
 	}
 	visible, start := windowRows(rows, m.detailCursor, maxRows)
+	if st.Error != "" {
+		banner := errorStyle.Render(cell("⚠ "+st.Error, usable))
+		visible = append([]string{banner}, visible...)
+	}
 
 	title := m.breadcrumb()
 	right := fmt.Sprintf("%d steps", len(steps))

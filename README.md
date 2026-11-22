@@ -24,6 +24,8 @@ Phases 1–2 implement a **Level 2 Flux Freeze**: suspending and restoring confi
 
 Phase 3 adds layered `switches.yaml` + `workflows/*.yaml` configuration, a Go action-handler registry (`flux.suspend`/`flux.resume`, `kubernetes.scale`, optional `kubernetes.suspend`), typed journal v2 originals, and a Flux dependency interlock that suspends reconciliation before scaling a dependent down.
 
+One-way switches (`one_way: true`) are buttons: they run their steps once, in declaration order, with no ON side. `talos.shutdown` uses `talosctl` to power off nodes sequentially.
+
 ---
 
 ## Table of Contents
@@ -118,7 +120,8 @@ config/
     ├── flux.yaml
     ├── navidrome.yaml
     ├── pullini.yaml
-    └── cloudflared.yaml
+    ├── cloudflared.yaml
+    └── cluster-shutdown.yaml
 ```
 
 ### Example Configuration
@@ -143,6 +146,12 @@ switches:
     description: Scale Cloudflared to zero and close the tunnel (auto-suspends Flux)
     icon: 🌐
     workflow: cloudflared
+
+  - id: cluster-shutdown
+    name: Cluster Shutdown
+    description: Power off 235 → 234 → 233 (one-way; no automatic restore)
+    icon: ⏻
+    workflow: cluster-shutdown
 ```
 
 `icon` is optional. It is rendered in a fixed-width slot in the TUI so names stay aligned; switches without an icon simply leave that slot blank.
@@ -164,15 +173,28 @@ steps:
       on: {restore: previous, default: 1}
 ```
 
-`workflows/pullini.yaml` and `workflows/cloudflared.yaml` follow the same pattern. See `workflows/flux.yaml` for the full Flux example. Steps run in order for ON and in reverse order for OFF.
+`workflows/pullini.yaml` and `workflows/cloudflared.yaml` follow the same pattern. See `workflows/flux.yaml` for the full Flux example. Steps run in order for ON and in reverse order for OFF; one-way workflows run in declaration order.
 
-Supported actions in Phase 3:
+```yaml
+# workflows/cluster-shutdown.yaml
+id: cluster-shutdown
+one_way: true
+steps:
+  - {id: 01-235, action: talos.shutdown, target: {kind: Node, name: "192.168.2.235"}}
+  - {id: 02-234, action: talos.shutdown, target: {kind: Node, name: "192.168.2.234"}}
+  - {id: 03-233, action: talos.shutdown, target: {kind: Node, name: "192.168.2.233"}}
+```
+
+A one-way switch has no ON side: it is a button that runs each step once and waits for the node to become unreachable before starting the next. `talos.shutdown` requires `talosctl` on `PATH` with a working `~/.talos/config`, and must be run from outside the nodes being shut down. Because each step waits, the CLI automatically extends its default operation timeout for one-way workflows; if you pass `--timeout` explicitly it must cover every node (roughly two minutes per node). A probe failure renders that switch as `⚠ ERROR`/`UNKNOWN` instead of aborting the whole status report.
+
+Supported actions:
 
 | Action | Targets | Captured original |
 |---|---|---|
 | `flux.suspend` / `flux.resume` | Flux `Kustomization`, `HelmRelease` | `spec.suspend` |
 | `kubernetes.scale` | `Deployment`, `StatefulSet` | `spec.replicas` |
 | `kubernetes.suspend` (optional) | `CronJob` | `spec.suspend` |
+| `talos.shutdown` | `Node` (address in `name`) | reachability (`up`/`down`); irreversible |
 
 Validate without a cluster:
 
@@ -204,6 +226,8 @@ Output highlights:
 - `ORIGINAL`: Recorded original state before the last suspend
 - `GEN/OBS`: Resource generation vs observed generation (tagged with `(!)` if the controller is lagging)
 - `PHASE`: Active in-progress phase during an operation or recovery
+
+A switch whose live probe fails is reported with `Error:`/`UNKNOWN` (or `⚠ ERROR` in the TUI) without hiding the other switches.
 
 ---
 
@@ -261,7 +285,7 @@ Restores all configured resources to their recorded original states.
 
 ### `killswitch history`
 
-Inspects past operations recorded in the write-ahead journal (`journal.jsonl`).
+Inspects past operations recorded in the write-ahead journal (`journal.jsonl`). Each row shows when the switch ran, its name, direction (`ON`, `OFF`, or `ONE-WAY`), result, completed/target steps, and duration.
 
 ```bash
 # Show last 10 operations
@@ -270,7 +294,10 @@ Inspects past operations recorded in the write-ahead journal (`journal.jsonl`).
 # Filter by switch
 ./killswitch history --switch navidrome --limit 10
 
-# Output full history as JSON
+# Expand every operation into its workflow steps, targets, and errors
+./killswitch history --limit 10 --details
+
+# Output full history as JSON (includes per-step records)
 ./killswitch history --json
 ```
 
@@ -288,15 +315,16 @@ The main screen is a k9s-style table loaded from `switches.yaml`. The Flux recon
 
 Each panel title is a breadcrumb of your current location, e.g. `Flux Controls › Flux Reconciliation › Properties`, so you always know which level of the UI you are in.
 
-The `SWITCH` column is the live position of each switch (`ON`, `OFF`, `MIXED`, `DRIFT`, `MISSING`, `UNKNOWN`) derived from observing every step. For the Flux switch, the `CLUSTER` column additionally shows the aggregate (`RESTORED`, `SUSPENDED`, `MIXED`, `DRIFT`, `MISSING`). The properties view lists workflow steps with their observed and original values.
+The `STATE` column is the live position of each switch (`● ON`, `○ OFF`, `MIXED`, `DRIFT`, `MISSING`, `UNKNOWN`) derived from observing every step. One-way switches render as buttons (`▶ SHUTDOWN`, `○ DOWN`, `◐ PARTIAL`). For the Flux switch, the `CLUSTER` column additionally shows the aggregate (`RESTORED`, `SUSPENDED`, `MIXED`, `DRIFT`, `MISSING`). The properties view lists workflow steps with their observed and original values.
 
 **Keybindings:**
-- `↑` / `↓` (or `k` / `j`) — Select a switch (or scroll resources, the YAML view, and operations in history)
-- `Enter` — Open the selected switch's properties and list all Flux resources
+- `↑` / `↓` (or `k` / `j`) — Select a switch (or scroll resources, the YAML view, operations in history, and history details)
+- `Enter` — Open the selected switch's properties and list all Flux resources; in history, open the selected operation's per-step details
 - `y` (in properties) — Show the selected switch's effective YAML; scroll with `↑`/`↓`, `g`/`G`, or `PgUp`/`PgDn`, `Esc` to go back
-- `Esc` — Return from the properties, YAML, or history view to the previous screen
+- `Esc` — Return from the properties, YAML, history details, or history view to the previous screen
 - `Ctrl+T` (or `t` / `Space`) — Toggle the selected switch; a "building switch plan" dialog appears immediately, then the confirmation dialog once the plan is ready
-- `h` — Open the operation history recorded in `journal.jsonl`
+- `h` — Open the operation history recorded in `journal.jsonl`; `Enter` expands the selected operation into its steps
+- `l` (in history or history details) — Show the raw journal records for the selected operation; scroll with `↑`/`↓`, `g`/`G`, or `PgUp`/`PgDn`
 - `y` / `Enter` (in the confirmation dialog) — Confirm the pending change
 - `f` — Confirm with force override when the plan shows conflicts
 - `n` / `Esc` — Cancel the pending change

@@ -15,6 +15,8 @@ const (
 	viewList viewMode = iota
 	viewDetail
 	viewHistory
+	viewHistoryDetail
+	viewHistoryLog
 	viewYAML
 )
 
@@ -25,6 +27,7 @@ type switchDef struct {
 	description string
 	icon        string
 	workflow    string
+	oneWay      bool
 }
 
 var defaultSwitchDefs = []switchDef{
@@ -60,6 +63,12 @@ type historyMsg struct {
 	err   error
 }
 
+type historyLogMsg struct {
+	op    string
+	lines []string
+	err   error
+}
+
 type progressMsg struct {
 	step   int
 	total  int
@@ -83,6 +92,13 @@ type Model struct {
 	cursor        int
 	detailCursor  int
 	historyCursor int
+
+	historyDetailCursor int
+
+	historyLogLines  []string
+	historyLogScroll int
+	historyLogOp     string
+	historyLogReturn viewMode
 
 	// switch YAML
 	yamlLines  []string
@@ -117,12 +133,19 @@ func NewModel(eng *engine.Engine) Model {
 	m := Model{eng: eng}
 	if eng != nil {
 		for _, sw := range eng.Switches() {
+			oneWay := false
+			if cfg := eng.Config(); cfg != nil {
+				if wf := cfg.WorkflowForSwitch(sw.ID); wf != nil {
+					oneWay = wf.OneWay
+				}
+			}
 			m.switches = append(m.switches, switchDef{
 				id:          sw.ID,
 				name:        sw.Name,
 				description: sw.Description,
 				icon:        sw.Icon,
 				workflow:    sw.Workflow,
+				oneWay:      oneWay,
 			})
 		}
 	}
@@ -200,6 +223,16 @@ func (m Model) fetchHistoryCmd() tea.Cmd {
 	return func() tea.Msg {
 		items, err := m.eng.History(50)
 		return historyMsg{items: items, err: err}
+	}
+}
+
+func (m Model) fetchHistoryLogCmd(op string) tea.Cmd {
+	return func() tea.Msg {
+		if m.eng == nil {
+			return historyLogMsg{op: op, err: fmt.Errorf("engine not available")}
+		}
+		lines, err := m.eng.OperationLog(op)
+		return historyLogMsg{op: op, lines: lines, err: err}
 	}
 }
 

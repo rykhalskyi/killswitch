@@ -53,6 +53,12 @@ func runStatus(ctx context.Context, eng *engine.Engine, jsonOutput bool, switchI
 		}
 		_ = w.Flush()
 		fmt.Println()
+
+		for _, sw := range report.Switches {
+			if sw.Error != "" {
+				fmt.Fprintf(os.Stderr, "Warning: switch %s: %s\n", sw.ID, sw.Error)
+			}
+		}
 	}
 
 	if len(report.Resources) > 0 {
@@ -104,6 +110,9 @@ func printSwitchStatus(st engine.SwitchStatus) {
 	fmt.Printf("\n=== SWITCH: %s ===\n", st.ID)
 	fmt.Printf("Name:       %s\n", st.Name)
 	fmt.Printf("State:      %s\n", st.State)
+	if st.Error != "" {
+		fmt.Printf("Error:      %s\n", st.Error)
+	}
 	if st.Requires != "" {
 		fmt.Printf("Requires:   flux=%s\n", st.Requires)
 	}

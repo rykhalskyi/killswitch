@@ -12,10 +12,11 @@ import (
 	"github.com/rykhalskyi/killswitch/internal/state"
 )
 
-// orderedSteps returns steps in ON order and reversed for OFF.
+// orderedSteps returns steps in ON order and reversed for OFF. One-way
+// workflows have no ON side, so their buttons always run in declared order.
 func orderedSteps(wf *config.Workflow, dir Direction) []config.Step {
 	steps := append([]config.Step(nil), wf.Steps...)
-	if dir == DirectionOff {
+	if dir == DirectionOff && !wf.OneWay {
 		for i, j := 0, len(steps)-1; i < j; i, j = i+1, j-1 {
 			steps[i], steps[j] = steps[j], steps[i]
 		}
@@ -40,6 +41,9 @@ func (e *Engine) BuildSwitchPlan(ctx context.Context, switchID string, dir Direc
 	wf := e.cfg.Workflows[sw.Workflow]
 	if wf == nil {
 		return nil, fmt.Errorf("switch %q references unknown workflow %q", switchID, sw.Workflow)
+	}
+	if wf.OneWay && dir != DirectionOff {
+		return nil, fmt.Errorf("switch %q is one-way; only the OFF transition is supported", switchID)
 	}
 
 	plan := &Plan{

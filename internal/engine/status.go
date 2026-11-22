@@ -27,9 +27,18 @@ func (e *Engine) Status(ctx context.Context) (*StatusReport, error) {
 	}
 
 	for i := range e.cfg.Switches {
-		st, err := e.switchStatus(ctx, &e.cfg.Switches[i])
+		sw := &e.cfg.Switches[i]
+		st, err := e.switchStatus(ctx, sw)
 		if err != nil {
-			return nil, err
+			// Keep one bad switch from hiding every other switch's status.
+			st = SwitchStatus{
+				ID:          sw.ID,
+				Name:        sw.Name,
+				Description: sw.Description,
+				Workflow:    sw.Workflow,
+				State:       SwitchUnknown,
+				Error:       err.Error(),
+			}
 		}
 		report.Switches = append(report.Switches, st)
 	}
@@ -78,9 +87,13 @@ func (e *Engine) switchStatus(ctx context.Context, sw *config.Switch) (SwitchSta
 
 	stateNow, err := e.switchState(ctx, sw.ID)
 	if err != nil {
-		return st, err
+		// Record the probe failure on the switch and keep observing its steps;
+		// the caller can still render the other switches.
+		st.State = SwitchUnknown
+		st.Error = err.Error()
+	} else {
+		st.State = stateNow
 	}
-	st.State = stateNow
 
 	for _, step := range wf.Steps {
 		handler, err := e.registry.Get(step.Action)

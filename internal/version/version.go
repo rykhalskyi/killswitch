@@ -2,7 +2,7 @@
 package version
 
 // Version is the Kill Switch application version.
-const Version = "0.3.0"
+const Version = "0.3.5"
 
 // Display returns the version prefixed with "v".
 func Display() string {

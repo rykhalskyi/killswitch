@@ -9,7 +9,9 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
+	"github.com/rykhalskyi/killswitch/internal/actions"
 	"github.com/rykhalskyi/killswitch/internal/config"
 	"github.com/rykhalskyi/killswitch/internal/engine"
 )
@@ -30,6 +32,12 @@ func handleSwitchWithDefault(args []string, dir engine.Direction, defaultSwitch 
 	if err := fs.Parse(rest); err != nil {
 		return engine.ExitConfigOrConnection
 	}
+	timeoutExplicit := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "timeout" {
+			timeoutExplicit = true
+		}
+	})
 
 	logger := setupLogger(cf.logLevel)
 	eng, cancel, code := initEngine(cf, logger)
@@ -50,10 +58,29 @@ func handleSwitchWithDefault(args []string, dir engine.Direction, defaultSwitch 
 		return engine.ExitConfigOrConnection
 	}
 
-	ctx, cancelTimeout := context.WithTimeout(context.Background(), cf.timeout)
+	ctx, cancelTimeout := context.WithTimeout(context.Background(), switchTimeout(eng.Config(), switchID, cf.timeout, timeoutExplicit))
 	defer cancelTimeout()
 
 	return runSwitchTransition(ctx, eng, switchID, dir, *dryRun, *yes, *force)
+}
+
+// switchTimeout extends the default operation timeout for one-way workflows
+// that wait for each node to power off. An explicit --timeout is always
+// honored.
+func switchTimeout(cfg *config.Config, switchID string, base time.Duration, explicit bool) time.Duration {
+	if explicit || cfg == nil {
+		return base
+	}
+	wf := cfg.WorkflowForSwitch(switchID)
+	if wf == nil || !wf.OneWay {
+		return base
+	}
+	perStep := actions.DefaultShutdownCommandTimeout + actions.DefaultNodeDownTimeout
+	needed := time.Duration(len(wf.Steps))*perStep + 30*time.Second
+	if needed > base {
+		return needed
+	}
+	return base
 }
 
 func handleSuspend(args []string) int {

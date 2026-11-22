@@ -89,12 +89,20 @@ func sampleHistory(count int) []engine.HistoryItem {
 		items = append(items, engine.HistoryItem{
 			Op:         fmt.Sprintf("01TEST%02d", i),
 			Action:     "suspend",
+			Switch:     "media",
+			SwitchName: "Media services",
+			Workflow:   "media",
+			Direction:  "off",
 			StartedAt:  "2026-11-17T12:00:00Z",
 			Status:     status,
 			Targets:    15,
 			OK:         14,
 			Failed:     1,
 			DurationMs: 4200,
+			Steps: []engine.HistoryStep{
+				{Step: "jellyfin", Action: "kubernetes.scale", Target: "Deployment/media/jellyfin", Status: "ok", Original: 3, Desired: 0, Observed: 0, DurationMs: 1200},
+				{Step: "sonarr", Action: "kubernetes.scale", Target: "StatefulSet/media/sonarr", Status: "error", Error: "boom"},
+			},
 		})
 	}
 	return items
@@ -324,6 +332,120 @@ func TestHistoryView(t *testing.T) {
 	}
 	if !strings.Contains(view, "4.2s") {
 		t.Fatalf("expected formatted duration in history, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Media services") {
+		t.Fatalf("expected switch name in history, got:\n%s", view)
+	}
+	if !strings.Contains(view, "14/15") {
+		t.Fatalf("expected completed/target step count in history, got:\n%s", view)
+	}
+	if !strings.Contains(view, "OFF") {
+		t.Fatalf("expected switch direction in history, got:\n%s", view)
+	}
+}
+
+func TestHistoryJournalLogView(t *testing.T) {
+	dir := t.TempDir()
+	j, err := journal.Open(filepath.Join(dir, "journal.jsonl"))
+	if err != nil {
+		t.Fatalf("open journal: %v", err)
+	}
+	_ = j.Append(&journal.Event{Op: "01LOG", Event: journal.EventOpStart, Action: "suspend", Switch: "cluster-shutdown", Direction: "off", Targets: 1})
+	_ = j.Append(&journal.Event{Op: "01OTHER", Event: journal.EventOpStart, Action: "restore", Switch: "media"})
+	_ = j.Close()
+
+	m := NewModel(engine.New(nil, nil, dir, "test", nil))
+	m.width, m.height = 100, 24
+	m.view = viewHistory
+	m.history = []engine.HistoryItem{{
+		Op: "01LOG", SwitchName: "Cluster Shutdown", Direction: "off", OneWay: true,
+		Status: "success", Targets: 1, OK: 1,
+	}}
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	m = next.(Model)
+	if m.view != viewHistoryLog || cmd == nil {
+		t.Fatalf("l should open the journal log, got view=%v cmd=%v", m.view, cmd)
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+
+	view := m.View()
+	if !strings.Contains(view, "op.start") {
+		t.Fatalf("expected journal events in the log view:\n%s", view)
+	}
+	if strings.Contains(view, "01OTHER") {
+		t.Fatalf("log view must only include the selected operation:\n%s", view)
+	}
+
+	m.historyLogLines = make([]string, 40)
+	for i := range m.historyLogLines {
+		m.historyLogLines[i] = fmt.Sprintf("line-%d", i)
+	}
+	m.historyLogScroll = 0
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = next.(Model)
+	if m.historyLogScroll != 1 {
+		t.Fatalf("j should scroll the journal log, got %d", m.historyLogScroll)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = next.(Model)
+	if m.historyLogScroll != len(m.historyLogLines)-1 {
+		t.Fatalf("G should jump to the end, got %d", m.historyLogScroll)
+	}
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(Model)
+	if m.view != viewHistory {
+		t.Fatalf("esc should return to history, got view=%v", m.view)
+	}
+}
+
+func TestHistoryDirectionLabel(t *testing.T) {
+	cases := []struct {
+		item engine.HistoryItem
+		want string
+	}{
+		{engine.HistoryItem{Direction: "off"}, "OFF"},
+		{engine.HistoryItem{Direction: "on"}, "ON"},
+		{engine.HistoryItem{Action: "suspend"}, "OFF"},
+		{engine.HistoryItem{Direction: "off", OneWay: true}, "ONE-WAY"},
+	}
+	for _, tc := range cases {
+		if got := historyDirectionLabel(tc.item); got != tc.want {
+			t.Errorf("historyDirectionLabel(%+v) = %q, want %q", tc.item, got, tc.want)
+		}
+	}
+}
+
+func TestHistoryDetailView(t *testing.T) {
+	m := NewModel(nil)
+	m.width, m.height = 100, 24
+	m.view = viewHistory
+	m.history = sampleHistory(2)
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	if m.view != viewHistoryDetail {
+		t.Fatalf("enter should open history details, got view=%v", m.view)
+	}
+	view := m.View()
+	for _, want := range []string{"jellyfin", "kubernetes.scale", "want=0"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("history detail missing %q:\n%s", want, view)
+		}
+	}
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = next.(Model)
+	if m.historyDetailCursor != 1 {
+		t.Fatalf("down should move history detail cursor, got %d", m.historyDetailCursor)
+	}
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(Model)
+	if m.view != viewHistory {
+		t.Fatalf("esc should return to history, got view=%v", m.view)
 	}
 }
 
@@ -614,5 +736,31 @@ func TestClusterState(t *testing.T) {
 	}}}
 	if got, _ := m.clusterState(); got != "DRIFT" {
 		t.Fatalf("cluster state = %q, want DRIFT", got)
+	}
+}
+
+func TestOneWaySwitchActsAsButton(t *testing.T) {
+	m := NewModel(nil)
+	m.switches = []switchDef{{id: "cluster-shutdown", name: "Cluster Shutdown", oneWay: true}}
+	m.status = &engine.StatusReport{Switches: []engine.SwitchStatus{{
+		ID: "cluster-shutdown", State: engine.SwitchOn,
+	}}}
+
+	id, dir, ok := m.nextTransition()
+	if !ok || id != "cluster-shutdown" || dir != engine.DirectionOff {
+		t.Fatalf("one-way transition = %q %q %v, want cluster-shutdown off", id, dir, ok)
+	}
+
+	if got := m.switchStateAt(0).label; got != "▶ SHUTDOWN" {
+		t.Fatalf("one-way state = %q, want SHUTDOWN", got)
+	}
+
+	m.status.Switches[0].State = engine.SwitchOff
+	if got := m.switchStateAt(0).label; got != "○ DOWN" {
+		t.Fatalf("one-way state = %q, want DOWN", got)
+	}
+
+	if _, _, ok := m.nextTransition(); !ok {
+		t.Fatal("button must stay usable after the targets are down")
 	}
 }

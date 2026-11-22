@@ -72,6 +72,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case historyLogMsg:
+		m.historyLogOp = msg.op
+		m.historyLogScroll = 0
+		if msg.err != nil {
+			m.historyLogLines = nil
+			m.errorMessage = fmt.Sprintf("Error loading journal: %v", msg.err)
+		} else {
+			m.historyLogLines = msg.lines
+			m.errorMessage = ""
+		}
+		return m, nil
+
 	case progressMsg:
 		m.execStep = msg.step
 		m.execTotal = msg.total
@@ -146,7 +158,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "ctrl+t", "t", " ":
-			if m.view == viewHistory || m.view == viewYAML {
+			if m.view == viewHistory || m.view == viewHistoryDetail || m.view == viewHistoryLog || m.view == viewYAML {
 				return m, nil
 			}
 			switchID, dir, ok := m.nextTransition()
@@ -162,7 +174,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.fetchPlanCmd(switchID, dir, engine.LegacyAction(dir))
 
 		case "r", "u":
-			if m.view == viewHistory {
+			if m.view == viewHistoryLog {
+				return m, m.fetchHistoryLogCmd(m.historyLogOp)
+			}
+			if m.view == viewHistory || m.view == viewHistoryDetail {
 				return m, tea.Batch(m.fetchStatusCmd(), m.fetchHistoryCmd())
 			}
 			return m, m.fetchStatusCmd()
@@ -171,11 +186,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view == viewHistory {
 				return m, nil
 			}
+			if m.view == viewHistoryDetail || m.view == viewHistoryLog {
+				m.view = viewHistory
+				return m, nil
+			}
 			m.historyReturn = m.view
 			m.view = viewHistory
 			m.historyCursor = 0
 			m.errorMessage = ""
 			return m, m.fetchHistoryCmd()
+
+		case "l", "L":
+			if m.view != viewHistory && m.view != viewHistoryDetail {
+				return m, nil
+			}
+			item := m.selectedHistory()
+			if item == nil {
+				return m, nil
+			}
+			m.historyLogReturn = m.view
+			m.view = viewHistoryLog
+			m.historyLogOp = item.Op
+			m.historyLogLines = []string{"Loading journal…"}
+			m.historyLogScroll = 0
+			m.errorMessage = ""
+			return m, m.fetchHistoryLogCmd(item.Op)
 
 		case "y", "Y":
 			if m.view == viewDetail {
@@ -188,6 +223,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case viewHistory:
 				if m.historyCursor > 0 {
 					m.historyCursor--
+				}
+			case viewHistoryDetail:
+				if m.historyDetailCursor > 0 {
+					m.historyDetailCursor--
+				}
+			case viewHistoryLog:
+				if m.historyLogScroll > 0 {
+					m.historyLogScroll--
 				}
 			case viewDetail:
 				if m.detailCursor > 0 {
@@ -209,6 +252,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case viewHistory:
 				if m.historyCursor < len(m.history)-1 {
 					m.historyCursor++
+				}
+			case viewHistoryDetail:
+				if m.historyDetailCursor < len(m.historyDetailSteps())-1 {
+					m.historyDetailCursor++
+				}
+			case viewHistoryLog:
+				if m.historyLogScroll < len(m.historyLogLines)-1 {
+					m.historyLogScroll++
 				}
 			case viewDetail:
 				max := 0
@@ -233,11 +284,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view == viewYAML {
 				m.yamlScroll = 0
 			}
+			if m.view == viewHistoryLog {
+				m.historyLogScroll = 0
+			}
 			return m, nil
 
 		case "G":
 			if m.view == viewYAML && len(m.yamlLines) > 0 {
 				m.yamlScroll = len(m.yamlLines) - 1
+			}
+			if m.view == viewHistoryLog && len(m.historyLogLines) > 0 {
+				m.historyLogScroll = len(m.historyLogLines) - 1
 			}
 			return m, nil
 
@@ -246,6 +303,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.yamlScroll -= 10
 				if m.yamlScroll < 0 {
 					m.yamlScroll = 0
+				}
+			}
+			if m.view == viewHistoryLog {
+				m.historyLogScroll -= 10
+				if m.historyLogScroll < 0 {
+					m.historyLogScroll = 0
 				}
 			}
 			return m, nil
@@ -260,12 +323,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.yamlScroll = 0
 				}
 			}
+			if m.view == viewHistoryLog {
+				m.historyLogScroll += 10
+				if m.historyLogScroll > len(m.historyLogLines)-1 {
+					m.historyLogScroll = len(m.historyLogLines) - 1
+				}
+				if m.historyLogScroll < 0 {
+					m.historyLogScroll = 0
+				}
+			}
 			return m, nil
 
 		case "enter":
 			if m.view == viewList {
 				m.view = viewDetail
 				m.detailCursor = 0
+			} else if m.view == viewHistory && len(m.history) > 0 {
+				m.view = viewHistoryDetail
+				m.historyDetailCursor = 0
 			}
 			return m, nil
 
@@ -273,6 +348,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.view {
 			case viewHistory:
 				m.view = m.historyReturn
+			case viewHistoryDetail:
+				m.view = viewHistory
+			case viewHistoryLog:
+				m.view = m.historyLogReturn
 			case viewDetail:
 				m.view = viewList
 			case viewYAML:

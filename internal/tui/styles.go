@@ -80,6 +80,10 @@ var (
 			Bold(true).
 			Foreground(yellow)
 
+	actionStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(yellow)
+
 	errorStyle = lipgloss.NewStyle().
 			Foreground(red)
 

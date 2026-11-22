@@ -87,14 +87,22 @@ func (m Model) panelStatus() (string, lipgloss.Style) {
 }
 
 func (m Model) footerText() string {
+	verb := "toggle"
+	if def := m.selectedSwitch(); def.oneWay {
+		verb = "shut down"
+	}
 	switch m.view {
 	case viewHistory:
-		return "[↑/↓] scroll   [esc] back   [r] refresh   [q] quit"
+		return "[↑/↓] select   [enter] details   [l] journal   [esc] back   [r] refresh   [q] quit"
+	case viewHistoryDetail:
+		return "[↑/↓] scroll   [l] journal   [esc] back   [r] refresh   [q] quit"
+	case viewHistoryLog:
+		return "[↑/↓] scroll   [g/G] top/bottom   [esc] back   [r] refresh   [q] quit"
 	case viewYAML:
 		return "[↑/↓] scroll   [g/G] top/bottom   [esc] back   [q] quit"
 	case viewDetail:
-		return "[↑/↓] scroll   [y] YAML   [esc] back   [ctrl+t] toggle   [h] history   [r] refresh   [q] quit"
+		return "[↑/↓] scroll   [y] YAML   [esc] back   [ctrl+t] " + verb + "   [h] history   [r] refresh   [q] quit"
 	default:
-		return "[↑/↓] select   [enter] inspect   [ctrl+t] toggle   [h] history   [r] refresh   [q] quit"
+		return "[↑/↓] select   [enter] inspect   [ctrl+t] " + verb + "   [h] history   [r] refresh   [q] quit"
 	}
 }
