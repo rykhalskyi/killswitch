@@ -287,7 +287,7 @@ func TestSwitchYAMLView(t *testing.T) {
 		t.Fatalf("y should open the YAML view, got view=%v", m.view)
 	}
 	view := m.View()
-	for _, want := range []string{"id: navidrome", "icon: ♪", "flux: suspended", "kind: Deployment"} {
+	for _, want := range []string{"   1  id: navidrome", "icon: ♪", "flux: suspended", "kind: Deployment"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected YAML view to contain %q:\n%s", want, view)
 		}
@@ -644,7 +644,7 @@ func TestFluxSwitchPinnedFirst(t *testing.T) {
 	cfg := &config.Config{
 		Switches: []config.Switch{
 			{ID: "navidrome", Name: "Navidrome", Workflow: "navidrome"},
-			{ID: "flux", Name: "Flux Reconciliation", Icon: "★", Workflow: "flux"},
+			{ID: "flux", Name: "Flux Reconciliation", Icon: "⭐", Workflow: "flux"},
 		},
 		Workflows: map[string]*config.Workflow{
 			"flux":      {ID: "flux", Name: "Flux"},
@@ -661,19 +661,19 @@ func TestFluxSwitchPinnedFirst(t *testing.T) {
 		t.Fatalf("flux switch should be pinned first, got %+v", defs)
 	}
 	view := m.View()
-	if !strings.Contains(view, "★  Flux Reconciliation") {
+	if !strings.Contains(view, "⭐ Flux Reconciliation") {
 		t.Fatalf("expected the configured flux icon, got:\n%s", view)
 	}
 	checkDimensions(t, m, "pinned flux")
 }
 
 func TestSwitchIconSlotAlignment(t *testing.T) {
-	withIcon := switchNameText("  ", "★", "Navidrome")
+	withIcon := switchNameText("  ", "⭐", "Navidrome")
 	withoutIcon := switchNameText("  ", "", "Navidrome")
 	if lipgloss.Width(withIcon) != lipgloss.Width(withoutIcon) {
 		t.Fatalf("icon slot must keep names aligned: %q vs %q", withIcon, withoutIcon)
 	}
-	if strings.Contains(withoutIcon, "★") {
+	if strings.Contains(withoutIcon, "⭐") {
 		t.Fatalf("unset icon must leave a blank slot, got %q", withoutIcon)
 	}
 }

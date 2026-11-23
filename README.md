@@ -139,7 +139,7 @@ switches:
   - id: flux
     name: Flux Reconciliation
     description: Suspend or resume Flux reconciliation
-    icon: ★
+    icon: ⭐
     workflow: flux
 
   - id: navidrome
@@ -161,7 +161,7 @@ switches:
   - id: cluster-shutdown
     name: Cluster Shutdown
     description: Power off 235 → 234 → 233 (one-way; no automatic restore)
-    icon: ⏻
+    icon: 🛑
     workflow: cluster-shutdown
 ```
 
@@ -329,7 +329,7 @@ Launches the full interactive terminal UI powered by Bubble Tea:
 ./killswitch tui
 ```
 
-The main screen is a k9s-style table loaded from `switches.yaml`. The Flux reconciliation switch is the main control: it is always pinned to the top (even if declared later in the file) and rendered in the accent color. Switches may set an optional `icon` (for example `★` for Flux or `☁` for a tunnel switch); icons render in a fixed-width slot so names stay aligned, and unset icons leave that slot blank.
+The main screen is a k9s-style table loaded from `switches.yaml`. The Flux reconciliation switch is the main control: it is always pinned to the top (even if declared later in the file) and rendered in the accent color. Switches may set an optional `icon` (for example `⭐` for Flux or `☁` for a tunnel switch); icons render in a fixed-width slot so names stay aligned, and unset icons leave that slot blank.
 
 Each panel title is a breadcrumb of your current location, e.g. `Flux Controls › Flux Reconciliation › Properties`, so you always know which level of the UI you are in.
 

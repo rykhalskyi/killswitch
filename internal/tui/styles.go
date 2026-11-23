@@ -25,14 +25,6 @@ var (
 			Bold(true).
 			Foreground(lipgloss.Color("#F9FAFB"))
 
-	logoRedStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(red)
-
-	logoWhiteStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#E5E7EB"))
-
 	subtitleStyle = lipgloss.NewStyle().
 			Foreground(muted)
 

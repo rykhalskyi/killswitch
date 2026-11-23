@@ -43,7 +43,7 @@ switches:
   - id: flux
     name: Flux Reconciliation
     description: Suspend or resume Flux reconciliation
-    icon: ★
+    icon: ⭐
     workflow: flux
   - id: navidrome
     name: Navidrome
@@ -57,7 +57,7 @@ switches:
   - id: cluster-shutdown
     name: Cluster Shutdown
     description: Power off 235 → 234 → 233 (one-way; no automatic restore)
-    icon: ⏻
+    icon: 🛑
     workflow: cluster-shutdown
 ```
 

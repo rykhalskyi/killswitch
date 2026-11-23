@@ -70,6 +70,11 @@ func (m Model) renderYAML(bodyHeight int) string {
 	}
 
 	visible, start := windowRows(m.yamlLines, m.yamlScroll, maxRows)
+	usable := m.contentWidth()
+	rows := make([]string, 0, len(visible))
+	for i, line := range visible {
+		rows = append(rows, cell(fmt.Sprintf("%4d  %s", start+i+1, line), usable))
+	}
 
 	title := m.breadcrumb()
 	right := fmt.Sprintf("%d lines", len(m.yamlLines))
@@ -77,5 +82,5 @@ func (m Model) renderYAML(bodyHeight int) string {
 		title = fmt.Sprintf("%s  (%d-%d of %d)", title, start+1, start+len(visible), len(m.yamlLines))
 	}
 
-	return m.renderPanel(title, right, "", visible, bodyHeight)
+	return m.renderPanel(title, right, "", rows, bodyHeight)
 }
