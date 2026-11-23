@@ -4,20 +4,23 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/rykhalskyi/killswitch/internal/config"
 )
 
 type fakeTalosClient struct {
-	up    map[string]bool
-	order []string
+	up      map[string]bool
+	order   []string
+	timeout time.Duration
 }
 
 func (f *fakeTalosClient) NodeUp(_ context.Context, node string) (bool, error) {
 	return f.up[node], nil
 }
 
-func (f *fakeTalosClient) Shutdown(_ context.Context, node string) error {
+func (f *fakeTalosClient) Shutdown(_ context.Context, node string, timeout time.Duration) error {
+	f.timeout = timeout
 	f.order = append(f.order, node)
 	f.up[node] = false
 	return nil
@@ -76,5 +79,19 @@ func TestTalosShutdownRejectsNonNodeTarget(t *testing.T) {
 
 	if err := h.Validate(step); err == nil {
 		t.Fatal("expected kind validation error")
+	}
+}
+
+func TestTalosShutdownHandlerPassesStepTimeout(t *testing.T) {
+	client := &fakeTalosClient{up: map[string]bool{"192.168.2.235": true}}
+	h := &TalosShutdownHandler{Client: client}
+	step := nodeStep("192.168.2.235")
+	step.Timeout = config.Duration(6 * time.Minute)
+
+	if _, err := h.Apply(context.Background(), step, "down"); err != nil {
+		t.Fatalf("Apply failed: %v", err)
+	}
+	if client.timeout != 6*time.Minute {
+		t.Fatalf("client timeout = %s, want 6m", client.timeout)
 	}
 }

@@ -139,7 +139,7 @@ switches:
   - id: flux
     name: Flux Reconciliation
     description: Suspend or resume Flux reconciliation
-    icon: ★
+    icon: ⭐
     workflow: flux
 
   - id: navidrome
@@ -161,7 +161,7 @@ switches:
   - id: cluster-shutdown
     name: Cluster Shutdown
     description: Power off 235 → 234 → 233 (one-way; no automatic restore)
-    icon: ⏻
+    icon: 🛑
     workflow: cluster-shutdown
 ```
 
@@ -190,13 +190,14 @@ steps:
 # workflows/cluster-shutdown.yaml
 id: cluster-shutdown
 one_way: true
+timeout: 10m
 steps:
   - {id: 01-235, action: talos.shutdown, target: {kind: Node, name: "192.168.2.235"}}
   - {id: 02-234, action: talos.shutdown, target: {kind: Node, name: "192.168.2.234"}}
   - {id: 03-233, action: talos.shutdown, target: {kind: Node, name: "192.168.2.233"}}
 ```
 
-A one-way switch has no ON side: it is a button that runs each step once and waits for the node to become unreachable before starting the next. `talos.shutdown` requires `talosctl` on `PATH` with a working `~/.talos/config`, and must be run from outside the nodes being shut down. Because each step waits, the CLI automatically extends its default operation timeout for one-way workflows; if you pass `--timeout` explicitly it must cover every node (roughly two minutes per node). A probe failure renders that switch as `⚠ ERROR`/`UNKNOWN` instead of aborting the whole status report.
+A one-way switch has no ON side: it is a button that runs each step once and waits for the node to become unreachable before starting the next. `talos.shutdown` requires `talosctl` on `PATH` with a working `~/.talos/config`, and must be run from outside the nodes being shut down. Each step waits up to the workflow `timeout` (default `90s`; set `timeout: 10m` when nodes take several minutes to power off), and an individual step can override it. The CLI automatically extends its default operation timeout for one-way workflows to cover every step; if you pass `--timeout` explicitly it must cover the whole run. A probe failure renders that switch as `⚠ ERROR`/`UNKNOWN` instead of aborting the whole status report.
 
 Supported actions:
 
@@ -328,7 +329,7 @@ Launches the full interactive terminal UI powered by Bubble Tea:
 ./killswitch tui
 ```
 
-The main screen is a k9s-style table loaded from `switches.yaml`. The Flux reconciliation switch is the main control: it is always pinned to the top (even if declared later in the file) and rendered in the accent color. Switches may set an optional `icon` (for example `★` for Flux or `☁` for a tunnel switch); icons render in a fixed-width slot so names stay aligned, and unset icons leave that slot blank.
+The main screen is a k9s-style table loaded from `switches.yaml`. The Flux reconciliation switch is the main control: it is always pinned to the top (even if declared later in the file) and rendered in the accent color. Switches may set an optional `icon` (for example `⭐` for Flux or `☁` for a tunnel switch); icons render in a fixed-width slot so names stay aligned, and unset icons leave that slot blank.
 
 Each panel title is a breadcrumb of your current location, e.g. `Flux Controls › Flux Reconciliation › Properties`, so you always know which level of the UI you are in.
 
@@ -387,7 +388,7 @@ Kill Switch follows strict exit code semantics for reliable automation:
 
 Workflow steps run in declaration order for ON and in reverse order for OFF. The example Flux workflow declares HelmReleases forward then Kustomizations forward, so OFF runs Kustomizations in reverse and then HelmReleases in reverse, and ON restores HelmReleases before Kustomizations. This prevents Kustomizations with `wait: true` from timing out on suspended Helm releases.
 
-One-way workflows (`one_way: true`) ignore the ON direction entirely and always run in declaration order, waiting for each sequential shutdown to finish before starting the next. They cannot declare `requires.flux`.
+One-way workflows (`one_way: true`) ignore the ON direction entirely and always run in declaration order, waiting for each sequential shutdown to finish before starting the next. Set a workflow-level `timeout` (or a per-step `timeout`) when targets take longer than the 90s default to power off. They cannot declare `requires.flux`.
 
 A workflow may declare `requires: {flux: suspended}` or `{flux: active}`. Turning a dependent OFF (capturing originals and applying its non-default state) auto-toggles Flux to the required state first, so scaling a Flux-managed workload down is not immediately reconciled back. Turning the dependent back ON leaves Flux as-is. Toggling Flux never touches dependent switches; Flux reconciliation remains the source of truth for workloads. The whole prerequisite cascade is journaled as one operation.
 

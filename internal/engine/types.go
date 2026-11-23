@@ -96,6 +96,7 @@ type PlanItem struct {
 	ConflictReason    string             `json:"conflictReason,omitempty"`
 	Cascade           bool               `json:"cascade,omitempty"`
 	ContinueOnError   bool               `json:"continueOnError,omitempty"`
+	Timeout           config.Duration    `json:"timeout,omitempty"`
 }
 
 // Plan represents the proposed changes before execution.

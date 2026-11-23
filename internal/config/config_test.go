@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func writeLayered(t *testing.T, switches, workflow string) string {
@@ -163,5 +164,45 @@ func TestParseStateValues(t *testing.T) {
 	}
 	if v, ok := values.StringValue("restore"); !ok || v != "previous" {
 		t.Fatalf("string value = %v %v", v, ok)
+	}
+}
+
+func TestWorkflowAndStepTimeout(t *testing.T) {
+	dir := writeLayered(t, `
+switches:
+  - id: cluster-shutdown
+    name: Cluster Shutdown
+    workflow: cluster-shutdown
+`, `
+id: cluster-shutdown
+one_way: true
+timeout: 6m
+steps:
+  - id: 01-235
+    action: talos.shutdown
+    target: {kind: Node, name: "192.168.2.235"}
+  - id: 02-234
+    action: talos.shutdown
+    target: {kind: Node, name: "192.168.2.234"}
+    timeout: 8m
+`)
+	// The helper writes the workflow as flux.yaml; rename it for this workflow id.
+	if err := os.Rename(filepath.Join(dir, "workflows", "flux.yaml"), filepath.Join(dir, "workflows", "cluster-shutdown.yaml")); err != nil {
+		t.Fatalf("renaming workflow: %v", err)
+	}
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	wf := cfg.Workflows["cluster-shutdown"]
+	if got := wf.Timeout.Duration(); got != 6*time.Minute {
+		t.Fatalf("workflow timeout = %s, want 6m", got)
+	}
+	if got := wf.StepTimeout(wf.Steps[0]); got != 6*time.Minute {
+		t.Fatalf("step 1 timeout = %s, want 6m", got)
+	}
+	if got := wf.StepTimeout(wf.Steps[1]); got != 8*time.Minute {
+		t.Fatalf("step 2 timeout = %s, want 8m", got)
 	}
 }

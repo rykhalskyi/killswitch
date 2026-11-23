@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -70,10 +71,11 @@ type StateValues map[string]any
 
 // Step is one target and its desired values per switch position.
 type Step struct {
-	ID     string     `yaml:"id" json:"id"`
-	Action string     `yaml:"action" json:"action"`
-	Target Resource   `yaml:"target" json:"target"`
-	States StepStates `yaml:"states" json:"states"`
+	ID      string     `yaml:"id" json:"id"`
+	Action  string     `yaml:"action" json:"action"`
+	Target  Resource   `yaml:"target" json:"target"`
+	States  StepStates `yaml:"states" json:"states"`
+	Timeout Duration   `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 }
 
 type StepStates struct {
@@ -88,6 +90,9 @@ type Workflow struct {
 	Requires Requires `yaml:"requires" json:"requires"`
 	Steps    []Step   `yaml:"steps" json:"steps"`
 	OnError  string   `yaml:"on_error" json:"on_error"`
+	// Timeout is the per-step timeout used by actions that wait for a target
+	// to reach a state. Individual steps may override it.
+	Timeout Duration `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 	// OneWay marks a workflow as a one-off action with no ON side. It runs in
 	// declaration order for OFF and refuses ON transitions.
 	OneWay bool `yaml:"one_way,omitempty" json:"one_way,omitempty"`
@@ -275,6 +280,18 @@ func (c *Config) WorkflowForSwitch(id string) *Workflow {
 	return c.Workflows[sw.Workflow]
 }
 
+// StepTimeout returns the effective timeout for one step: the step override
+// when set, otherwise the workflow timeout, otherwise zero (action default).
+func (w *Workflow) StepTimeout(step Step) time.Duration {
+	if step.Timeout > 0 {
+		return step.Timeout.Duration()
+	}
+	if w != nil && w.Timeout > 0 {
+		return w.Timeout.Duration()
+	}
+	return 0
+}
+
 // AllWorkflows returns workflows sorted by id.
 func (c *Config) AllWorkflows() []*Workflow {
 	ids := make([]string, 0, len(c.Workflows))
@@ -337,6 +354,9 @@ func (c *Config) Validate() error {
 		if wf.OneWay && wf.Requires.Flux != "" && wf.Requires.Flux != RequiresAny {
 			return fmt.Errorf("workflow %q is one-way and cannot require flux=%s", id, wf.Requires.Flux)
 		}
+		if wf.Timeout < 0 {
+			return fmt.Errorf("workflow %q timeout cannot be negative", id)
+		}
 		stepIDs := make(map[string]bool)
 		for i, step := range wf.Steps {
 			if step.ID == "" {
@@ -346,6 +366,9 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("workflow %q has duplicate step id %q", id, step.ID)
 			}
 			stepIDs[step.ID] = true
+			if step.Timeout < 0 {
+				return fmt.Errorf("workflow %q step %q timeout cannot be negative", id, step.ID)
+			}
 			if err := c.validateStep(id, step); err != nil {
 				return err
 			}

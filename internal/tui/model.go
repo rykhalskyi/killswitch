@@ -35,7 +35,7 @@ var defaultSwitchDefs = []switchDef{
 		id:          "flux",
 		name:        "Flux Reconciliation",
 		description: "Suspend / restore all configured Flux Kustomizations and HelmReleases",
-		icon:        "★",
+		icon:        "⭐",
 		workflow:    "flux",
 	},
 }

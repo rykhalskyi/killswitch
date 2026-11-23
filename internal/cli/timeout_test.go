@@ -52,3 +52,28 @@ func TestSwitchTimeoutExtendsForOneWayWorkflows(t *testing.T) {
 		t.Fatalf("nil config timeout = %s, want %s", got, base)
 	}
 }
+
+func TestSwitchTimeoutUsesWorkflowTimeouts(t *testing.T) {
+	cfg := &config.Config{
+		Switches: []config.Switch{
+			{ID: "cluster-shutdown", Name: "Cluster Shutdown", Workflow: "cluster-shutdown"},
+		},
+		Workflows: map[string]*config.Workflow{
+			"cluster-shutdown": {
+				ID:      "cluster-shutdown",
+				OneWay:  true,
+				Timeout: config.Duration(6 * time.Minute),
+				Steps: []config.Step{
+					{ID: "01", Action: config.ActionTalosShutdown, Target: config.Resource{Kind: config.KindNode, Name: "192.168.2.235"}},
+					{ID: "02", Action: config.ActionTalosShutdown, Target: config.Resource{Kind: config.KindNode, Name: "192.168.2.234"}},
+					{ID: "03", Action: config.ActionTalosShutdown, Target: config.Resource{Kind: config.KindNode, Name: "192.168.2.233"}},
+				},
+			},
+		},
+	}
+
+	want := 3*(actions.DefaultShutdownCommandTimeout+6*time.Minute) + 30*time.Second
+	if got := switchTimeout(cfg, "cluster-shutdown", 60*time.Second, false); got != want {
+		t.Fatalf("switchTimeout = %s, want %s", got, want)
+	}
+}

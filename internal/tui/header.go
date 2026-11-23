@@ -11,20 +11,14 @@ func (m Model) renderHeader(height int) string {
 	word := styledWordmark()
 	wordWidth := lipgloss.Width(word[0])
 
-	logo := styledLogo()
-	logoWidth := lipgloss.Width(logo[0])
-	combinedWidth := wordWidth + 2 + logoWidth
-
 	verText := version.Display()
 	verWidth := 2 + lipgloss.Width(verText)
 	verSuffix := "  " + versionStyle.Render(verText)
 
 	needForWord := wordWidth
-	needForLogo := combinedWidth
 	if height < 5 {
 		// No subtitle row: the version shares the last wordmark row.
 		needForWord += verWidth
-		needForLogo += verWidth
 	}
 
 	// The block wordmark needs four rows. Below that, use a compact one-liner.
@@ -33,14 +27,8 @@ func (m Model) renderHeader(height int) string {
 		return lipgloss.Place(m.width, height, lipgloss.Left, lipgloss.Center, bannerStyle.Render(title))
 	}
 
-	lines := make([]string, 0, 5)
-	if m.width >= needForLogo {
-		for i := 0; i < 4; i++ {
-			lines = append(lines, word[i]+"  "+logo[i])
-		}
-	} else {
-		lines = append(lines, word...)
-	}
+	lines := make([]string, 0, height)
+	lines = append(lines, word...)
 
 	if height >= 5 {
 		subtitle := subtitleStyle.Render("FLUX RECONCILIATION CONTROLLER") + "  ·  " + versionStyle.Render(verText)
@@ -62,17 +50,6 @@ func styledWordmark() []string {
 		lines[i] = killWordStyle.Render(kill[i]) + "  " + switchWordStyle.Render(sw[i])
 	}
 	return lines
-}
-
-// styledLogo renders a compact pseudographic version of the kill-switch logo:
-// a vertical toggle with red rays and a red "on" knob.
-func styledLogo() []string {
-	return []string{
-		logoRedStyle.Render(`  \│/    `),
-		logoWhiteStyle.Render(`╭─────╮  `),
-		logoWhiteStyle.Render(`│`) + logoRedStyle.Render(`█████`) + logoWhiteStyle.Render(`│  `),
-		logoWhiteStyle.Render(`╰─────╯  `),
-	}
 }
 
 // renderBanner draws a 4-row block "pseudographic" banner.

@@ -52,7 +52,7 @@ func TestWaitDownFailsWhenContextIsCanceled(t *testing.T) {
 	time.AfterFunc(20*time.Millisecond, cancel)
 	defer cancel()
 
-	err := c.waitDown(ctx, "192.168.2.235")
+	err := c.waitDown(ctx, "192.168.2.235", 0)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("waitDown error = %v, want context.Canceled", err)
 	}
@@ -65,7 +65,7 @@ func TestWaitDownFailsOnTimeout(t *testing.T) {
 		Interval:    5 * time.Millisecond,
 	}
 
-	if err := c.waitDown(context.Background(), "192.168.2.235"); err == nil {
+	if err := c.waitDown(context.Background(), "192.168.2.235", 0); err == nil {
 		t.Fatal("waitDown reported success while the node stayed reachable")
 	}
 }
@@ -75,7 +75,7 @@ func TestShutdownFailsOnCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if err := c.Shutdown(ctx, "192.168.2.235"); err == nil {
+	if err := c.Shutdown(ctx, "192.168.2.235", 0); err == nil {
 		t.Fatal("Shutdown reported success with a canceled context")
 	}
 }
@@ -85,7 +85,7 @@ func TestShutdownSkipsNodeThatIsAlreadyDown(t *testing.T) {
 		return nil, errors.New("connection refused")
 	}}
 
-	if err := c.Shutdown(context.Background(), "192.168.2.235"); err != nil {
+	if err := c.Shutdown(context.Background(), "192.168.2.235", 0); err != nil {
 		t.Fatalf("Shutdown = %v, want nil for an already-down node", err)
 	}
 }

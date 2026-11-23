@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/rykhalskyi/killswitch/internal/actions"
 	"github.com/rykhalskyi/killswitch/internal/config"
@@ -148,5 +149,36 @@ steps:
 	}
 	if !cfg.Workflows["cluster-shutdown"].OneWay {
 		t.Fatal("expected one_way to be loaded")
+	}
+}
+
+func TestOneWayPlanCarriesStepTimeout(t *testing.T) {
+	cfg := oneWayConfig()
+	wf := cfg.Workflows["cluster-shutdown"]
+	wf.Timeout = config.Duration(6 * time.Minute)
+	wf.Steps[2].Timeout = config.Duration(9 * time.Minute)
+
+	handler := &recordingTalosHandler{up: map[string]bool{
+		"192.168.2.235": true,
+		"192.168.2.234": true,
+		"192.168.2.233": true,
+	}}
+	eng := New(cfg, nil, t.TempDir(), "test", nil)
+	eng.SetTalosHandler(handler)
+	ctx := context.Background()
+	if err := eng.Init(ctx); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	t.Cleanup(func() { _ = eng.Close() })
+
+	plan, err := eng.BuildSwitchPlan(ctx, "cluster-shutdown", DirectionOff)
+	if err != nil {
+		t.Fatalf("BuildSwitchPlan failed: %v", err)
+	}
+	want := []time.Duration{6 * time.Minute, 6 * time.Minute, 9 * time.Minute}
+	for i, item := range plan.Items {
+		if got := item.Timeout.Duration(); got != want[i] {
+			t.Fatalf("item %d timeout = %s, want %s", i, got, want[i])
+		}
 	}
 }
